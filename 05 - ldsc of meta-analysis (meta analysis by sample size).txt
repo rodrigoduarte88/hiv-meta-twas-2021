@@ -1,0 +1,171 @@
+# Download files needed for ldsc
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/
+# eur_w_ld_chr 
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/eur_w_ld_chr.tar.bz2 
+tar xjf eur_w_ld_chr.tar.bz2
+# w_hm3.snplist 
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/w_hm3.snplist.bz2
+bzip2 -d w_hm3.snplist.bz2
+
+
+conda activate ldsc_R
+# R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1.txt", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+colnames(gwas) <- c("CHR_BP_hg19","A1","A2","Neff","Z","P","Direction","HetISq","HetChiSq","HetDf","HetPVal")
+
+gwas <- gwas %>% mutate_at(c("A1","A2"), .funs=toupper)
+# add rs ids from database
+dbsnp <- fread("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz", stringsAsFactors=F, h=T)
+# dbsnp$A1_plus_strand_norm <- ifelse((dbsnp$STRAND_dbsnp=="+"), dbsnp$A1_dbsnp, dbsnp$A1_dbsnp_rc)  
+# dbsnp$A2_plus_strand_norm <- ifelse((dbsnp$STRAND_dbsnp=="+"), dbsnp$A2_dbsnp, dbsnp$A2_dbsnp_rc)  
+
+gwas_annotated <- merge(gwas, dbsnp, by.x="CHR_BP_hg19", by.y="CHRBP_hg19")
+dim(gwas)           #  7964474
+dim(gwas_annotated) #  6535291
+
+gwas_annotated$allele_match <- ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp & gwas_annotated$A2==gwas_annotated$A2_dbsnp), "match",   	
+									ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp & gwas_annotated$A2==gwas_annotated$A1_dbsnp), "match",   	
+										ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A2_dbsnp_rc), "match", 
+											ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A1_dbsnp_rc), "match","err")
+											)) )					
+table(gwas_annotated$allele_match) # 235 mismatches
+
+# remove those that had mismatches
+gwas_annotated <- gwas_annotated[!gwas_annotated$allele_match=="err",]
+
+# add MAF based on dbsnp-estimated frequencies
+gwas_annotated$MAF_dbsnp151 <- with(gwas_annotated, pmin(FRQ.A1_dbsnp,FRQ.A2_dbsnp))
+dim(gwas_annotated) # 6535056  
+
+########################################
+# Run munge_sumstats,and prepare for LD score regression.  
+########################################
+ldsc <- dplyr::select(gwas_annotated, "RSID_dbsnp", "CHR_BP_hg19", "A1", "A2","Neff","Z","P","Direction","HetISq","HetChiSq","HetDf","HetPVal", "MAF_dbsnp151")
+colnames(ldsc) <- c("SNP", "CHR_BP_hg19", "A1", "A2","Neff","Z","P","Direction","HetISq","HetChiSq","HetDf","HetPVal", "MAF")
+dim(ldsc) # 6535056
+# make sure there are no dups (just in case)
+ldsc <- ldsc[!(duplicated(ldsc$SNP) | duplicated(ldsc$SNP, fromLast=TRUE) ) ,]
+ldsc <- ldsc[!(duplicated(ldsc$CHR_BP_hg19) | duplicated(ldsc$CHR_BP_hg19, fromLast=TRUE) ) ,]
+dim(ldsc) # 6535056 
+
+# prepare file for ldsc 
+write.table(ldsc, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+# munge_sumstats for ldsc - hapmap3 only
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged.hapmap3.txt.gz --snp SNP --a1 A1 --a2 A2 --p P --N-col Neff --merge-alleles /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/w_hm3.snplist --chunksize 500000"))
+# Mean chi^2 = 1.147
+# Lambda GC = 1.138
+# Max chi^2 = 27.201
+# 0 Genome-wide significant SNPs (some may have been removed by filtering).
+
+# calculate heritability
+system(paste0("ldsc.py --h2 /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged.hapmap3.txt.gz.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_GWASs_meta"))
+# Total Observed scale h2: 0.2105 (0.0369)
+# Lambda GC: 1.1364
+# Mean Chi^2: 1.142
+# Intercept: 1.07 (0.0077)    #       <--------
+# Ratio: 0.4926 (0.0541)
+
+########################################
+# Prepare file for TWAS with FUSION 
+######################################## 
+# munge_sumstats for TWAS (same as above but not selecting hapmap3 SNPs).
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged_twas.txt.gz --snp SNP --a1 A1 --a2 A2 --p P --N-col Neff --chunksize 500000"))
+# Mean chi^2 = 1.144
+# Lambda GC = 1.132
+# Max chi^2 = 31.536
+# 5 Genome-wide significant SNPs (some may have been removed by filtering).
+
+########################################
+# For FUMA, get the file processed with munge_sumstats for the TWAS, and calculate BETAs/SE based on MAF
+######################################## 
+gwas_munged <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged_twas.txt.gz.sumstats.gz", h=T, stringsAsFactors=F)
+gwas_munged<-gwas_munged[,1]
+gwas_munged_annotated <- merge(gwas_munged, gwas_annotated, by.x="SNP",by.y="RSID_dbsnp")
+dim(gwas_munged_annotated) # 5347926 # snps from GWAS that survived the munge_sumstats.py script.
+
+# Calculate BETA and SE from P and Z # From https://www.biostars.org/p/319584/#414335 # Oficial reference: https://images.nature.com/full/nature-assets/ng/journal/v48/n5/extref/ng.3538-S1.pdf
+	# Get the frequency of A1 on dbsnp151. DBsnp is all on the positive strand. 
+gwas_munged_annotated$FRQ.A1_inferred_dbsnp <- ifelse((gwas_munged_annotated$A1==gwas_munged_annotated$A1_dbsnp | gwas_munged_annotated$A1==gwas_munged_annotated$A1_dbsnp_rc), gwas_munged_annotated$FRQ.A1_dbsnp, gwas_munged_annotated$FRQ.A2_dbsnp)
+range(gwas_munged_annotated$FRQ.A1_inferred_dbsnp) # 0.01 - 0.99
+
+# Beta = z / sqrt(2p(1− p)(n + z^2)) #### Where p is the imputed frequency of the SNP, n is number of samples analyzed, and z is z-score
+gwas_munged_annotated$BETA <- gwas_munged_annotated$Z / sqrt ( 2 * gwas_munged_annotated$FRQ.A1_inferred_dbsnp * ( 1- gwas_munged_annotated$FRQ.A1_inferred_dbsnp) * ( gwas_munged_annotated$Neff + gwas_munged_annotated$Z^2)  ) 
+
+# SE =1 / sqrt(2p(1− p)(n + z^2))
+gwas_munged_annotated$SE <- 1 / sqrt ( 2 * gwas_munged_annotated$FRQ.A1_inferred_dbsnp * ( 1- gwas_munged_annotated$FRQ.A1_inferred_dbsnp) * ( gwas_munged_annotated$Neff + gwas_munged_annotated$Z^2)  ) 
+
+# select final columns
+fuma_final <- select(gwas_munged_annotated, CHR_dbsnp, BP_dbsnp, SNP, P, A1, A2, BETA, SE, Neff)
+colnames(fuma_final) <- c("CHR","BP","RSID","P","A1","A2","BETA","SE","Neff")
+options(scipen=999) # removing scientific notation - needed for FUMA
+write.table(fuma_final, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_fuma.gz"), quote=FALSE, sep="\t", row.names=FALSE, col.names=T)
+
+
+########################
+# counting SNPs
+########################
+dim(gwas_munged_annotated) # final number of variants: 5347926
+sig <- gwas_munged_annotated [ gwas_munged_annotated$P < 5e-6, ]
+write.table(sig, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1.txt_5e-6hits", sep="\t", quote=F, col.names=T, row.names=F)
+# sig <- gwas [ gwas$P < 5e-7, ]
+# write.table(sig, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1.txt_5e-7hits", sep="\t", quote=F, col.names=T, row.names=F)
+
+# count concordant suggestive signals
+dim(sig) # 437
+# get only variants assessed in all studies - removes those with "?"
+sig <- sig[ grep("\\?", sig$Direction, invert = TRUE) , ] 
+dim(sig) # 313
+# remove variants that were not assessed in all studies - removes those with "0"
+sig <- sig[ grep("0", sig$Direction, invert = TRUE) , ] # removes those with "0"
+dim(sig) # 313
+# count how many were all negative or all positive
+table(sig$Direction)
+# ++++ +++- ++-- +-++ -+-- --++ ---- 
+# 144    2    5    1    2    2  157
+
+########################
+# clumping 
+########################
+clumping <- gwas_munged_annotated 
+clumping <- select(clumping,"CHR_dbsnp", "BP_dbsnp", "SNP", "P", "A1", "A2", "BETA", "SE", "Neff") 
+colnames(clumping) <- c("CHR", "BP", "SNP", "P", "A1", "A2", "BETA", "SE", "N")
+
+write.table(clumping, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_clumping.txt", quote=F, col.names=T, row.names=F, sep="\t")
+system("for i in {1..22}; do plink --bfile /scratch/groups/biomarkers-brc-mh/Reference_data/1KG_Phase3/PLINK/EUR/EUR_phase3.MAF_001.chr${i} --clump /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_clumping.txt --clump-p1 0.0001 --clump-p2 0.0001 --clump-r2 0.25 --clump-kb 500 --chr ${i} --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_clumped_new_params_chr${i}.txt; done")
+
+res_folder <- "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/"
+file_list <- list.files(path=res_folder, "*.txt.clumped")
+library(data.table)
+dat<-NULL
+for (i in 1:length(file_list) ){
+filename<-paste0(res_folder,file_list[i])
+tmp <- fread(filename,sep=" ")
+dat<-rbind(dat,tmp)
+}
+sig <- dat[dat$P < 5e-6, ]# 25
+sig <- dat[dat$P < 5e-8, ]# 18
+dat_final <- dat[,1:11]  
+write.table(dat_final, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_clumped.txt", sep="\t", quote=F, row.names=F, col.names=T)
+
+###############################
+# For fine-mapping uing FOCUS
+###############################
+focus <- gwas_munged_annotated 
+focus <- dplyr::select(focus, "CHR_dbsnp","SNP","BP_dbsnp","A1","A2","BETA", "SE", "P","Neff")
+colnames(focus) <- c("CHR","SNP","BP","A1","A2","BETA","SE","P","N")
+write.table(focus, gzfile("~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz"), col.names=TRUE, row.names=F, quote=FALSE, sep="\t")
+
+###############################
+# Filtered GWAS results for sharing
+###############################
+sharing <- gwas_munged_annotated 
+sharing <- dplyr::select(sharing, "CHR_BP_hg19", "CHR_dbsnp","BP_dbsnp","A1","A2","Neff","Z","P","Direction","HetISq","HetChiSq","HetDf","HetPVal","SNP", "MAF_dbsnp151", "BETA", "SE")
+colnames(sharing) <- c("CHR_BP_hg19", "CHR","BP","A1","A2","Neff","Z","P","Direction","HetISq","HetChiSq","HetDf","HetPVal","RSID", "MAF_dbsnp151", "BETA", "SE")
+write.table(sharing, gzfile("~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated.txt.gz"), col.names=TRUE, row.names=F, quote=FALSE)
+
+# # # # # Q-Q plot and Manhattan plots = done in FUMA

@@ -1,0 +1,74 @@
+srun -p shared,brc -n 1 --mem=50000 --time 3:00:00 --pty /bin/bash       
+mkdir -p ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/
+cd ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/
+
+# METAL takes care of all the strand flipping and provides the direction of effect relative to the same allele. (from https://genome.sph.umich.edu/wiki/METAL_Documentation#:~:text=metal%20takes%20care%20of%20all%20the%20strand%20flipping%20and%20provides%20the%20direction%20of%20effect%20relative%20to%20the%20same%20allele.)
+
+####################################################### ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/metal_input.sh
+
+
+# setup
+SEPARATOR TAB
+COLUMNCOUNTING STRICT
+# GENOMICCONTROL ON                 # Not needed yet
+# AVERAGEFREQ ON                    # No freq for each allele, only MAF.
+# MINMAXFREQ ON                     # No freq for each allele, only MAF.
+# MINWEIGHT 17000                   # combined effective weight is 17014, so this forces metal to assess all markers.
+# OVERLAP ON                        # corrects for any potential sample overlap
+SCHEME SAMPLESIZE                   # as opposed to "STDERR"
+#
+# Study 1 - McLaren
+MARKER CHR_BP
+ALLELE A1 A2
+EFFECT BETA 
+STDERR SE
+PVALUE P
+WEIGHTLABEL Neff
+PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_samplesize_meta.txt.gz
+#
+# Study 2 - Johnson
+MARKER CHR_BP
+ALLELE A1 A2
+EFFECT BETA
+STDERR SE
+PVALUE P
+WEIGHTLABEL Neff
+PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_samplesize_meta.txt.gz
+#
+# Study 3 - ukbb
+MARKER CHR_BP
+ALLELE A1 A2
+EFFECT BETA
+STDERR SE
+PVALUE P
+WEIGHTLABEL Neff
+PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_samplesize_meta.txt.gz
+#
+# Study 4 - finngen
+MARKER CHR_BP
+ALLELE A1 A2
+EFFECT BETA
+STDERR SE
+PVALUE P
+WEIGHTLABEL Neff
+PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_samplesize_meta.txt.gz
+# Finalizing
+OUTFILE HIV_acquisition_meta_sample_size .txt
+ANALYZE HETEROGENEITY # Include analysis of heterogeneity
+
+##################################################################
+
+# Now run the script(s)
+metal metal_input.sh > metal_input.sh.log
+
+# Output file is: ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1.txt
+
+# # # # Combined sample size: 
+# Study	    Cases	Controls	N	Effective N
+# mclaren	6334	7247	13581	13519.62
+# johnson	327	    805	    1132	930.16
+# ukbb	    285	    360856	361141	1139.10
+# finngen	357	    218435	218792	1425.67
+# # # # 				
+# Total	    7303	587343	594646	17014.55
+# # # # 

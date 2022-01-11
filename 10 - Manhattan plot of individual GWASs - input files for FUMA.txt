@@ -1,0 +1,16 @@
+srun -p shared,brc -n 1 --mem=50000 --time 3:00:00 --pty /bin/bash
+
+conda activate ldsc_R
+R
+#
+library(data.table)
+filenames <- c("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_samplesize_meta.txt.gz", "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_samplesize_meta.txt.gz", "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_samplesize_meta.txt.gz", "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_samplesize_meta.txt.gz")
+
+for (i in 1:length(filenames)) {
+print(i)
+gwas <- fread(filenames[i], h=T, stringsAsFactors=F)
+library(splitstackshape)
+info <- cSplit(gwas, "CHR_BP", "_")
+options(scipen=999)
+write.table(info, gzfile(paste0(filenames[i],".fuma.txt.gz")), quote=F, sep="\t", col.names=T, row.names=F)
+}

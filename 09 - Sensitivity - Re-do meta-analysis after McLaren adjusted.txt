@@ -1,0 +1,582 @@
+# Here, we'll perform the meta-analysis with johnson, mclaren, ukbb and finngen, using the same files obtained in script #2, but with the results from the mclaren study corrected using the intercept-GC method 
+# see https://gist.github.com/MichelNivard/fcb22ab7401d7e9af95a5e1fd46ad5b7 for a description of this method
+# see also https://groups.google.com/g/ldsc_users/c/LtaCXhWEyO4?pli=1#:~:text=-%20z%20statistics%3A%20divide%20z%20stat%20by%20sqrt(intercept) for details on how to do this
+
+srun -p shared,brc -n 1 --mem=50000 --time 3:00:00 --pty /bin/bash
+
+
+# R>
+conda activate ldsc_R
+
+######################################
+# McLaren study - filter and apply correction
+######################################
+#R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren.txt", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+str(gwas)
+# there are NAs somewhere, impeding some numeric columns to be recognize as numeric. So force column as number to remove the NAs afterwards
+gwas$BP <- as.numeric(gwas$BP)
+gwas <- gwas[complete.cases(gwas[ , 3]),] # remove NAs
+# just check
+table(is.na(gwas$BP))
+table(is.na(gwas$CHR))
+table(gwas$CHR) # no chromosome X
+
+# add MAF column and filter
+gwas$FRQ_A_6334 <- as.numeric(gwas$FRQ_A_6334)
+gwas$FRQ_U_7247 <- as.numeric(gwas$FRQ_U_7247)
+gwas$MAF <- with(gwas, pmin(FRQ_A_6334,FRQ_U_7247))
+gwas <- gwas[gwas$MAF > 0.01 & gwas$MAF < 0.99, ]
+
+# Convert odds ratio to beta.
+gwas$OR <- as.numeric(gwas$OR)
+gwas$SE <- as.numeric(gwas$SE)
+gwas$P <- as.numeric(gwas$P)
+gwas$BETA <- log(gwas$OR)
+
+# recalculate P (to remove any Genomic Control if it was applied)
+# gwas$P_recalc <- 2*pnorm(-abs(gwas$BETA/gwas$SE))
+# all.equal(gwas$P_recalc, gwas$P) # they are not the same. Genomic control was applied.
+# gwas$P <- gwas$P_recalc
+
+# retain vars with INFO > 0.8
+gwas$INFO <- as.numeric(gwas$INFO)
+gwas <- gwas[gwas$INFO > 0.8, ]
+
+# remove variants that were not assessed in all studies of the meta-analysis
+gwas <- gwas[ grep("\\?", gwas$Direction, invert = TRUE) , ] # removes those with "?"
+gwas <- gwas[ grep("0", gwas$Direction, invert = TRUE) , ] # removes those with "0"
+table(nchar(gwas$Direction))
+gwas <- gwas[ nchar(gwas$Direction)==6, ]
+
+# add new name
+gwas$CHR_BP <- paste0(gwas$CHR,"_",gwas$BP)
+
+# remove duplicated variants by position
+gwas <- gwas[!(duplicated(gwas$CHR_BP) | duplicated(gwas$CHR_BP, fromLast=TRUE)),]
+
+# add Neff
+gwas$Neff <- "13519.62"
+
+# select final columns
+gwas <- dplyr::select(gwas, CHR_BP,CHR,BP,A1,A2,BETA,SE,P,MAF, Neff)
+colnames(gwas) <- c("CHR_BP","CHR","BP","A1","A2","BETA","SE","P","MAF","Neff")
+
+write.table(gwas, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_2_for_samplesize_meta_INTERCEPTGC_ADJUST.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_2_for_samplesize_meta_INTERCEPTGC_ADJUST.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_3_for_samplesize_meta_INTERCEPTGC_ADJUST --snp CHR_BP --a1 A1 --a2 A2 --p P --N-col Neff"))
+
+munged <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_3_for_samplesize_meta_INTERCEPTGC_ADJUST.sumstats.gz", h=T, stringsAsFactors=F)
+
+merged <- merge(munged, gwas, by.x="SNP", by.y="CHR_BP")
+
+# adjust BETA/SE by intercept calculated by ldsc (script #3) from this GWAS (Intercept = 1.0833)
+merged$SE <- merged$SE * sqrt(1.0833) # see https://groups.google.com/g/ldsc_users/c/LtaCXhWEyO4?pli=1#:~:text=-%20z%20statistics%3A%20divide%20z%20stat%20by%20sqrt(intercept)
+
+# recalculate P 
+merged$P <- 2*pnorm(-abs(merged$BETA/merged$SE))
+
+merged <- dplyr::select(merged, SNP, A1.x, A2.x, BETA, SE, P,  MAF, Neff)
+colnames(merged)<- c("CHR_BP", "A1", "A2","BETA", "SE","P","MAF", "Neff")
+
+write.table(merged, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_samplesize_meta_INTERCEPTGC_ADJUST.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+   
+
+
+##############################
+# Re-run meta-analysis
+#############################
+mkdir -p ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/
+cd ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/
+
+
+        ####################################################### ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/metal_input_mclarenadjusted.sh
+        # setup
+        SEPARATOR TAB
+        COLUMNCOUNTING STRICT
+        # GENOMICCONTROL ON                 # Not needed yet
+        # AVERAGEFREQ ON                    # No freq for each allele, only MAF.
+        # MINMAXFREQ ON                     # No freq for each allele, only MAF.
+        # MINWEIGHT 17000                   # combined effective weight is 17014, so this forces metal to assess all markers.
+        # OVERLAP ON                        # corrects for any potential sample overlap
+        SCHEME SAMPLESIZE                   # as opposed to "STDERR"
+        #
+        # Study 1 - McLaren
+        MARKER CHR_BP
+        ALLELE A1 A2
+        EFFECT BETA 
+        STDERR SE
+        PVALUE P
+        WEIGHTLABEL Neff
+        PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_samplesize_meta_INTERCEPTGC_ADJUST.txt.gz
+        #
+        # Study 2 - Johnson
+        MARKER CHR_BP
+        ALLELE A1 A2
+        EFFECT BETA
+        STDERR SE
+        PVALUE P
+        WEIGHTLABEL Neff
+        PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_samplesize_meta.txt.gz
+        #
+        # Study 3 - ukbb
+        MARKER CHR_BP
+        ALLELE A1 A2
+        EFFECT BETA
+        STDERR SE
+        PVALUE P
+        WEIGHTLABEL Neff
+        PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_samplesize_meta.txt.gz
+        #
+        # Study 4 - finngen
+        MARKER CHR_BP
+        ALLELE A1 A2
+        EFFECT BETA
+        STDERR SE
+        PVALUE P
+        WEIGHTLABEL Neff
+        PROCESS /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_samplesize_meta.txt.gz
+        # Finalizing
+        OUTFILE HIV_acquisition_meta_sample_size_mclarenadjusted .txt
+        ANALYZE HETEROGENEITY # Include analysis of heterogeneity
+        ##################################################################
+
+# Now run the script(s)
+metal metal_input_mclarenadjusted.sh > metal_input_mclarenadjusted.sh.log
+# Final file at: /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_sample_size_mclarenadjusted1.txt
+
+
+
+###############################
+# Re-calculate intercept to check it worked
+###############################
+# R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_sample_size_mclarenadjusted1.txt", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+
+colnames(gwas) <- c("SNP", "A1","A2", "Neff", "Z", "P", "Direction", "HetISq","HetChiSq" ,"HetDf", "HetPVal")
+# sig <- gwas[ gwas$P < 0.0000005]
+# write.table(sig, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_sample_size_mclarenadjusted1_below10-7.txt", quote=F, col.names=T, row.names=F)
+# add rs ids from database
+
+dbsnp <- fread("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz", stringsAsFactors=F, h=T)
+# dbsnp$A1_plus_strand_norm <- ifelse((dbsnp$STRAND_dbsnp=="+"), dbsnp$A1_dbsnp, dbsnp$A1_dbsnp_rc)  
+# dbsnp$A2_plus_strand_norm <- ifelse((dbsnp$STRAND_dbsnp=="+"), dbsnp$A2_dbsnp, dbsnp$A2_dbsnp_rc)  
+
+gwas_annotated <- merge(gwas, dbsnp, by.x="SNP", by.y="CHRBP_hg19")
+dim(gwas)           #   7964474 
+dim(gwas_annotated) # 6535291
+
+
+gwas_annotated <- gwas_annotated %>% mutate_at(c("A1","A2"), .funs=toupper)
+
+gwas_annotated$allele_match <- ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp & gwas_annotated$A2==gwas_annotated$A2_dbsnp), "match",   	
+									ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp & gwas_annotated$A2==gwas_annotated$A1_dbsnp), "match",   	
+										ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A2_dbsnp_rc), "match", 
+											ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A1_dbsnp_rc), "match","err")
+											)) )					
+table(gwas_annotated$allele_match) # 235 mismatches
+
+# ldsc only uses rsids, so remove anything that didn't match properly
+gwas_annotated <- gwas_annotated[ gwas_annotated$allele_match=="match",]
+dim(gwas_annotated)# 6535056
+
+ldsc <- dplyr::select(gwas_annotated, RSID_dbsnp, A1, A2, P, Neff, Z)
+colnames(ldsc) <- c("SNP", "A1", "A2","P","N", "Z")
+
+# prepare file for ldsc 
+write.table(ldsc, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclarenadjusted_ldsc.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+# munge_sumstats for ldsc
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclarenadjusted_ldsc.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclarenadjusted_ldsc.txt.gz --snp SNP --a1 A1 --a2 A2 --p P --N-col N --merge-alleles /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/w_hm3.snplist --chunksize 500000"))
+# Mean chi^2 = 1.075
+# Lambda GC = 1.067
+# Max chi^2 = 25.609
+# 0 Genome-wide significant SNPs (some may have been removed by filtering)
+
+# calculate heritability
+system(paste0("ldsc.py --h2 /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclarenadjusted_ldsc.txt.gz.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclaren_ldsc"))
+# Total Observed scale h2: 0.197 (0.0337)     # -----> still quite high
+# Lambda GC: 1.0649
+# Mean Chi^2: 1.0705
+# Intercept: 1.0031 (0.0072)                  # -----> GC corrected now
+# Ratio: 0.0436 (0.1021)
+
+
+# munge_sumstats for TWAS # not selecting hapmap3 snps
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclarenadjusted_ldsc.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclaren_ldsc.munged_twas.txt.gz --snp SNP --a1 A1 --a2 A2 --p P --N-col N --chunksize 500000"))
+# Mean chi^2 = 1.072
+# Lambda GC = 1.06
+# Max chi^2 = 29.245
+# 3 Genome-wide significant SNPs (some may have been removed by filtering).
+
+########################################
+# For FUMA, we'll have to follow through with those that have RS ids only, since we want to calculate BETA/SE based on MAF (obtained from the dbsnp file). This also filters for low frequency variants. HOWEVER, there will still be variants with poor Neff control.
+######################################## 
+munged <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclaren_ldsc.munged_twas.txt.gz.sumstats.gz",h=T,stringsAsFactors=F)
+munged <- munged[,1]
+gwas_annotated_fuma <- merge(gwas_annotated, munged, by.x="RSID_dbsnp",by.y="SNP")
+dim(gwas_annotated)
+dim(munged)
+dim(gwas_annotated_fuma)
+
+fuma <- gwas_annotated_fuma
+dim(fuma) # 5347927   # removes all NA values
+
+# Calculate BETA and SE from P and Z # From https://www.biostars.org/p/319584/#414335 # Oficial reference: https://images.nature.com/full/nature-assets/ng/journal/v48/n5/extref/ng.3538-S1.pdf
+	# Get the frequency of A1 on dbsnp151
+		# Put everything in dbsnp in the positive strand
+fuma$Freq_A1_infer_dbsnp <- ifelse((fuma$A1==fuma$A1_dbsnp | fuma$A1==fuma$A1_dbsnp_rc), fuma$FRQ.A1_dbsnp, fuma$FRQ.A2_dbsnp)
+range(fuma$Freq_A1_infer_dbsnp) # 0.01 - 0.99
+
+# Beta = z / sqrt(2p(1− p)(n + z^2)) #### Where p is the frequency of the imputed SNP, n is number of samples analyzed, and z is z-score
+fuma$BETA <- fuma$Z / sqrt ( 2 * fuma$Freq_A1_infer_dbsnp * ( 1- fuma$Freq_A1_infer_dbsnp) * ( fuma$Neff + fuma$Z^2)  ) 
+
+# SE =1 / sqrt(2p(1− p)(n + z^2))
+fuma$SE <- 1 / sqrt ( 2 * fuma$Freq_A1_infer_dbsnp * ( 1- fuma$Freq_A1_infer_dbsnp) * ( fuma$Neff + fuma$Z^2)  ) 
+
+# fuma and focus input are very similar
+fuma <- select(fuma, CHR_dbsnp, BP_dbsnp, RSID_dbsnp, P, A1, A2, BETA, SE, Neff)
+colnames(fuma) <- c("CHR","BP","RSID","P","A1","A2","BETA","SE","Neff")
+options(scipen=999) # removing scientific notation - needed for FUMA
+write.table(fuma, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_fuma.gz"), quote=FALSE, sep="\t", row.names=FALSE, col.names=T)
+
+focus <- fuma
+colnames(focus) <- c("CHR","BP","RSID","P","A1","A2","BETA","SE","N")
+write.table(focus, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz"), quote=FALSE, sep="\t", row.names=FALSE, col.names=T)
+
+###############################
+# The TWAS ...
+###############################
+# Environment set-up as in script #6. 
+# Set up folders:
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/scripts
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_backup
+
+############# /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out
+#SBATCH -p shared,brc
+#SBATCH --time=0-0:10:00
+#SBATCH --mem-per-cpu=5000
+#SBATCH --ntasks=1
+#SBATCH --array=1-22
+
+trap 'echo "# $(date) (time) $BASH_COMMAND"' DEBUG
+
+CHR=${SLURM_ARRAY_TASK_ID}
+
+conda activate fusion_final
+tissues=("YFS.BLOOD.RNAARR" "NTR.BLOOD.RNAARR" "sCCA1" "sCCA2" "sCCA3" "Adipose_Subcutaneous" "Adipose_Visceral_Omentum" "Adrenal_Gland" "Artery_Aorta" "Artery_Coronary" "Artery_Tibial" "Brain_Amygdala" "Brain_Anterior_cingulate_cortex_BA24" "Brain_Caudate_basal_ganglia" "Brain_Cerebellar_Hemisphere" "Brain_Cerebellum" "Brain_Cortex" "Brain_Frontal_Cortex_BA9" "Brain_Hippocampus" "Brain_Hypothalamus" "Brain_Nucleus_accumbens_basal_ganglia" "Brain_Putamen_basal_ganglia" "Brain_Spinal_cord_cervical_c-1" "Brain_Substantia_nigra" "Breast_Mammary_Tissue" "Cells_EBV-transformed_lymphocytes" "Cells_Transformed_fibroblasts" "Colon_Sigmoid" "Colon_Transverse" "Esophagus_Gastroesophageal_Junction" "Esophagus_Mucosa" "Esophagus_Muscularis" "Heart_Atrial_Appendage" "Heart_Left_Ventricle" "Liver" "Lung" "Minor_Salivary_Gland" "Muscle_Skeletal" "Nerve_Tibial" "Ovary" "Pancreas" "Pituitary" "Prostate" "Skin_Not_Sun_Exposed_Suprapubic" "Skin_Sun_Exposed_Lower_leg" "Small_Intestine_Terminal_Ileum" "Spleen" "Stomach" "Testis" "Thyroid" "Uterus" "Vagina" "Whole_Blood")
+
+for tissue in "${tissues[@]}"; do
+sbatch --export=TISSUE=${tissue},CHROMOSOME=${CHR} /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS_rscript.sh
+sleep 1
+done
+
+
+#########################################################
+
+
+###################### /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS_rscript.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out		# %x = job name (script name); %A = Job array's master job allocation number; %a = Job array ID (index) number.
+#SBATCH -p shared,brc								# Request a shared node
+#SBATCH --time=0-1:00:00 							# format: days-hours:minutes.
+#SBATCH --mem-per-cpu=20000							# 9GB, in Mb - if unspecified, task will be given 1 GB only.
+#SBATCH --ntasks=1									# requests x cores from any node, per task.
+#	SBATCH --array=1-22								# range%constainvalue => 1-22%4 would constrain 22 tasks to 4 at a time 
+
+trap 'echo "# $(date) (time) $BASH_COMMAND"' DEBUG
+
+conda activate fusion_final
+echo "Analyzing ${TISSUE}... Chromosome ${CHROMOSOME}"
+Rscript /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/FUSION.assoc_test.R \
+--sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_mclaren_ldsc.munged_twas.txt.gz.sumstats.gz \
+--weights /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca/${TISSUE}.P01.pos \
+--weights_dir /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca/ \
+--ref_ld_chr /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR. \
+--chr ${CHROMOSOME} \
+--out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/HIV_acquisition.${TISSUE}.${CHROMOSOME}.dat
+
+##########################################################
+sbatch /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS.sh
+
+# check they all ran
+ls /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/* | wc -l 
+# 1219 = that's 53 single tissues (48 gtex tissues + 3 sCCA + 2 blood cohorts) x 23 (22 chromosomes + 1 mhc region) files
+
+# create a backup folder with these results
+cp /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/* /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_backup/.
+
+# the sCCA dat files were created using ENSEMBL id, which should be converted to gene symbol. Also, add a PANEL to the first column (like in the gtex files!)
+conda activate Renv
+R
+                #R>
+                suppressMessages(library(dplyr))
+                suppressMessages(library(tidyr))
+                suppressMessages(library(readr))
+                suppressMessages(library(stringr))
+                suppressMessages(library(org.Hs.eg.db))
+                file_location <- "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/"   
+                file_list <- list.files(path=file_location, pattern="HIV_acquisition.sCCA")
+                ######## WARNING: This will replace the original files outputted by FUSION!
+               
+              
+                for (i in 1:length(file_list) ) {
+                # read file
+                filename<-paste0(file_location,file_list[i])
+                tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+
+                # add panel name. First create function that will detect panel name based on FILE column. Thanks to Helian / https://github.com/fenghelian/sCCA_ACAT_TWAS/blob/main/compute_acatP.r
+                get_panel<-function(file_name){
+                pat = "sCCA[0-9]"
+                panel = str_match(file_name,pattern = pat)[1,1]
+                return(panel)
+                }
+                panel_list <- lapply(tmp$FILE, FUN=get_panel)
+                panel_list <- unlist(panel_list, use.names=FALSE)
+                tmp$PANEL <- ifelse(is.na(tmp$PANEL),panel_list,tmp$PANEL)
+
+                # convert ensembl id to gene symbol in tmp var
+                library("org.Hs.eg.db") # see https://www.biostars.org/p/178726/
+                genes <- data.frame(tmp$ID)
+                colnames(genes) <- "ensembl"
+                # make sure ensembl ids don't have dots in their names
+                genes$ensembl = gsub("\\..*","",genes$ensembl)
+                genes$symbol <- mapIds(org.Hs.eg.db,keys=genes$ensembl, column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+                tmp$ID <- ifelse(is.na(genes$symbol),"NA", genes$symbol)  # removing ensembl genes that don't have a gene symbol
+                tmp <- tmp[!tmp$ID=="NA",]
+                write.table(tmp,paste0(file_location,file_list[i]),sep = "\t",quote = F,row.names = F,col.names = T)
+                }
+# The YFR/NTR samples had no panel name but had gene name. Fix this using similar code:
+conda activate Renv
+R
+                #R>
+                suppressMessages(library(dplyr))
+                suppressMessages(library(tidyr))
+                suppressMessages(library(readr))
+                suppressMessages(library(stringr))
+                suppressMessages(library(org.Hs.eg.db))
+                file_location <- "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/"   
+                pattern <- c("HIV_acquisition.YFS", "HIV_acquisition.NTR")
+                file_list <- list.files(path=file_location, pattern=paste0(pattern, collapse="|") )
+                ######## WARNING: This will replace the original files outputted by FUSION!
+                             
+                for (i in 1:length(file_list) ) {
+                # read file
+                filename<-paste0(file_location,file_list[i])
+                tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+
+                # add panel name. First create function that will detect panel name based on FILE column. Thanks to Helian / https://github.com/fenghelian/sCCA_ACAT_TWAS/blob/main/compute_acatP.r
+                get_panel<-function(file_name){
+                pat = "YFS|NTR"
+                panel = str_match(file_name,pattern = pat)[1,1]
+                return(panel)
+                }
+                panel_list <- lapply(tmp$FILE, FUN=get_panel)
+                panel_list <- unlist(panel_list, use.names=FALSE)
+                tmp$PANEL <- ifelse(is.na(tmp$PANEL),panel_list,tmp$PANEL)
+
+                write.table(tmp,paste0(file_location,file_list[i]),sep = "\t",quote = F,row.names = F,col.names = T)
+                }
+
+
+###################################################
+# identify number of unique genes in analysis
+###################################################
+conda activate fusion_final
+R
+              # Modified from https://github.com/fenghelian/sCCA_ACAT_TWAS/blob/main/compute_acatP.r
+              suppressMessages(library('dplyr'))
+              suppressMessages(library("tidyr"))
+              suppressMessages(library("readr"))
+              suppressMessages(library("optparse"))
+              library(stringr)
+
+              #Read in data
+              file_list <- list.files(path="/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/")
+              dat<-NULL
+              for (i in 1:length(file_list) ){
+              #######->  filename<-paste0(opt$file_location,file_list[i])
+              filename<-paste0("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/",file_list[i])
+              tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+              dat<-rbind(dat,tmp)
+              }
+
+              unique <- unique(dat$ID)
+              length(unique) # 27540 unique elements = Bonf -> 0.05/27540 => 1.815541031227306e-6
+              length(table(dat$PANEL)) # 53 (48 single gtex tissues + 3 scca + 2 blood cohorts)
+              table(is.na(dat$PANEL))
+
+
+##################################################################
+# TWAS PLOTTER, by Oliver Pain # https://github.com/opain/TWAS-plotter
+# install.packages(c('data.table','optparse','ggplot2','ggrepel','cowplot'))
+conda activate fusion_final
+
+# Combine per chromomsome TWAS results
+head -1 /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/HIV_acquisition.Adipose_Subcutaneous.1.dat > /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files
+tail -n +2 -q /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles/HIV_acquisition.* >> /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files
+
+# significance threshold is 0.05/27540 => 1.815541031227306e-6 # see line 308 => number of unique genes in the results (as identified above in the acat script)
+Rscript ~/programs/twas-plotter/TWAS-plotter/TWAS-plotter.V1.0.r \
+--twas /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files \
+--sig_p 1.815541031227306e-6  \
+--output /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/TWAS_plotter_sig_unique_elements
+
+
+#####################
+# Create qq-plot from TWAS results # see https://opain.github.io/MDD-TWAS/MDD_TWAS.html#212_twas_analysis
+#####################
+
+#load file with all hits - not just sign, ones
+conda activate fusion_final
+R
+    twas_sub_correct <- read.table("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files", header=T, stringsAsFactors = F)
+
+    ggd.qqplot = function(pvector, main=NULL, ...) {
+    o = -log10(sort(pvector,decreasing=F))
+    e = -log10( 1:length(o)/length(o) )
+    plot(e,o,pch=19,cex=1, main=main, ...,
+        xlab=expression(Expected~~-log[10](italic(p))),
+        ylab=expression(Observed~~-log[10](italic(p))),
+        xlim=c(0,max(e)), ylim=c(0,max(o)))
+    lines(e,e,col="red")
+    }
+
+    pvalues <- twas_sub_correct$TWAS.P
+
+    # Add a title
+    png("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/hiv_acq_TWAS_AllTissues_QQplot.png",width = 2000, height = 2000, units = "px", res=300)
+    ggd.qqplot(pvalues, "QQ-plot of TWAS p-values")
+    dev.off() 
+
+    ###
+    # Histogram of p-values
+    ###
+
+    library(ggplot2)
+
+    ## HISTOGRAM OF P-VALUES
+    png("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/hiv_acq_TWAS_AllTissues_pValHist.png",width = 2000, height = 2000, units = "px", res=300)
+    hist(twas_sub_correct$TWAS.P,
+        main = "Histogram of TWAS p-values",  
+        xlab ="P-values", 
+        ylab = "Frequency")
+    dev.off()
+
+
+##################
+# Identify P vals from TWAS based on previous TWAS
+##################
+conda activate ldsc_R
+R
+
+library(data.table)
+dat <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files", stringsAsFactors=F,h=T)
+# next command parsed from original TWAS results
+dat2 <- dat[ dat$ID=='UEVLD' & dat$PANEL=='sCCA3' | dat$ID=='HIST1H4K' & dat$PANEL=='Colon_Transverse' | dat$ID=='HIST1H4K' & dat$PANEL=='Thyroid' | dat$ID=='MICB' & dat$PANEL=='Esophagus_Muscularis' | dat$ID=='ZSCAN9' & dat$PANEL=='Brain_Cerebellum' | dat$ID=='PSORS1C1' & dat$PANEL=='Brain_Anterior_cingulate_cortex_BA24' | dat$ID=='RP1-265C24.5' & dat$PANEL=='Skin_Sun_Exposed_Lower_leg' | dat$ID=='ZSCAN9' & dat$PANEL=='sCCA2' | dat$ID=='HIST1H4L' & dat$PANEL=='NTR' | dat$ID=='MICB' & dat$PANEL=='Heart_Left_Ventricle' | dat$ID=='PRSS16' & dat$PANEL=='Brain_Caudate_basal_ganglia' | dat$ID=='MICB' & dat$PANEL=='Thyroid' | dat$ID=='ZSCAN16-AS1' & dat$PANEL=='sCCA2' | dat$ID=='RP1-313I6.12' & dat$PANEL=='Spleen' | dat$ID=='IER3' & dat$PANEL=='NTR' | dat$ID=='ZSCAN9' & dat$PANEL=='Brain_Cerebellar_Hemisphere' | dat$ID=='MICB' & dat$PANEL=='Small_Intestine_Terminal_Ileum' | dat$ID=='UEVLD' & dat$PANEL=='sCCA1' | dat$ID=='RP1-265C24.5' & dat$PANEL=='Adipose_Subcutaneous' | dat$ID=='H2BC12' & dat$PANEL=='sCCA1' | dat$ID=='MICB' & dat$PANEL=='Nerve_Tibial' | dat$ID=='HERC1' & dat$PANEL=='Cells_EBV-transformed_lymphocytes' | dat$ID=='XXbac-BPG308K3.6' & dat$PANEL=='Testis' | dat$ID=='LINC00240' & dat$PANEL=='Heart_Atrial_Appendage' | dat$ID=='LINC00240' & dat$PANEL=='Pituitary' | dat$ID=='MICB' & dat$PANEL=='Muscle_Skeletal' ,] 
+write.table(dat2, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files___from_previous_only", quote=F, sep="\t", col.names=T, row.names=F)
+
+#############
+# munge gwas for FOCUS
+#############
+conda activate ~/scratch/.conda/focus
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus
+
+
+focus munge /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz --output /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz.cleaned
+
+
+######################  /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_agnostic_final.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out		# %x = job name (script name); %A = Job array's master job allocation number; %a = Job array ID (index) number.
+#SBATCH -p shared,brc								# Request a shared node
+#SBATCH --time=0-36:00:00 							# format: days-hours:minutes.
+#SBATCH --mem-per-cpu=50000							# 9GB, in Mb - if unspecified, task will be given 1 GB only.
+#SBATCH --array=1-22								# range%constainvalue => 1-22%4 would constrain 22 tasks to 4 at a time 
+
+trap 'echo "# $(date) (time) $BASH_COMMAND"' DEBUG
+
+conda activate ~/scratch/.conda/focus
+
+CHR=${SLURM_ARRAY_TASK_ID}
+
+focus finemap /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed.db --chr ${CHR} --plot --p-threshold 5E-05 --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus/HIV.acq.agnostic.blood_fixed.5e-5.chr.${CHR}
+
+#################################
+# Process FOCUS results:
+
+conda activate fusion_final
+R
+# suppressMessages(library('dplyr'))
+suppressMessages(library('readr'))
+# suppressMessages(library('data.table'))
+# suppressMessages(library("tidyr"))
+# library(stringr)
+
+res_folder <- "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus/"
+file_list <- list.files(path=res_folder, "*.tsv")
+
+dat<-NULL
+
+for (i in 1:length(file_list) ){
+#######->  filename<-paste0(opt$file_location,file_list[i])
+filename<-paste0(res_folder,file_list[i])
+tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+dat<-rbind(dat,tmp)
+}
+
+
+dat <- dat[dat$pip > 0.5, ]
+dat <- dat[!dat$ens_gene_id=="NULL.MODEL",]
+write.table(dat, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_sig_results.tsv", sep="\t", quote=F, row.names=F, col.names=T)
+
+
+
+##############
+# FOCUS with prioritization
+##############
+conda activate ~/scratch/.conda/focus
+mkdir /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_prioritized                                   
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_prioritized
+
+
+CHR=15 
+tissue="Cells_EBV-transformed_lymphocytes"
+gene="HERC1"
+db=/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed.db
+focus finemap /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+
+
+CHR=6
+tissue="Colon_Transverse"
+gene="HIST1H4K"
+focus finemap /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+# The correct window for HIST1H4K is around 27 and 28 Mb
+
+
+CHR=6
+tissue="Esophagus_Muscularis"
+gene="MICB"
+focus finemap /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+# The correct window for MICB is around 30 and 31 mb
+
+
+CHR=6
+tissue="Brain_Anterior_cingulate_cortex_BA24"
+gene="PSORS1C1"
+focus finemap /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/HIV_acquisition_meta_mclarenadjusted_focus.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize_mclarenadjusted/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+# The correct window for PSORS1C1 is around 29 and 31 Mb

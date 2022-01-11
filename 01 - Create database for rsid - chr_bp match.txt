@@ -1,0 +1,80 @@
+######################### 
+# Filtering reference SNP annotations from dbsnp151
+#########################
+conda activate ldsc_R # loads the R version with the relevant libraries
+# R>
+library(data.table) 
+library(dplyr) 		
+setDTthreads(threads=16)
+dbsnp_0 <- fread("https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/snp151Common.txt.gz", h=F, stringsAsFactors=F)
+dbsnp <- dbsnp_0
+colnames(dbsnp) <- c("bin","chrom","chromStart","chromEnd","name","score","strand","refNCBI","refUCSC","observed","molType","class","valid","avHet","avHetSE","func","locType","weight","exceptions","submitterCount","submitters","alleleFreqCount","alleles","alleleNs","alleleFreqs","bitfields") # label columns #  extracted from: http://genome.cse.ucsc.edu/cgi-bin/hgTables?db=hg19&hgta_group=varRep&hgta_track=snp151Common&hgta_table=snp151Common&hgta_doSchema=describe+table+schema
+
+
+# select only single-nucleotide variants
+dbsnp <- dbsnp[dbsnp$class=="single",] # select SNPs
+dbsnp <- dbsnp[dbsnp$alleleFreqCount==2,] # select only those that have 2 allele posibilities
+dbsnp2 <- select(dbsnp, chrom, chromEnd, name, strand, refUCSC, observed, alleles, alleleFreqs)
+
+# note that some still have "odd" matches (multi-allelic?), e.g.: 
+# chrom chromEnd      name 			strand refUCSC observed alleles alleleFreqs X1 X2       X1       X2
+# chr1    11008 		rs575272151      +       C      C/T    C,G, 0.911941,0.088059,  C  G 0.911941 0.088059
+# Let's break the "alleles" and "alleleFreqs" fields
+dbsnp2_alleles <- data.frame(do.call('rbind', strsplit(as.character(dbsnp2$alleles),',',fixed=TRUE)))
+dbsnp2_alleleFreqs <- data.frame(do.call('rbind', strsplit(as.character(dbsnp2$alleleFreqs),',',fixed=TRUE)))
+
+dbsnp2_alleles$X1 <- as.character(dbsnp2_alleles$X1)
+dbsnp2_alleles$X2 <- as.character(dbsnp2_alleles$X2)
+
+dbsnp2_alleleFreqs$X1 <- as.numeric(as.character((dbsnp2_alleleFreqs$X1)))
+dbsnp2_alleleFreqs$X2 <- as.numeric(as.character((dbsnp2_alleleFreqs$X2)))
+
+dbsnp3 <- cbind(dbsnp2, dbsnp2_alleles, dbsnp2_alleleFreqs)
+
+colnames(dbsnp3) <- c("chrom","chromEnd","name","strand","refUCSC","observed","alleles","alleleFreqs", "A1", "A2", "Frq.A1","Frq.A2")
+dbsnp3<- select(dbsnp3,"chrom","chromEnd","name","strand","A1", "A2", "Frq.A1","Frq.A2")
+
+# select only SNPs
+dbsnp3 <- dbsnp3[ (dbsnp3$A1=="A" | dbsnp3$A1=="T" | dbsnp3$A1=="C" | dbsnp3$A1=="G") & (dbsnp3$A2=="A" | dbsnp3$A2=="T" | dbsnp3$A2=="C" | dbsnp3$A2=="G") , ]
+dim(dbsnp3)
+
+# select only non-ambiguous variants
+dbsnp3 <- dbsnp3[ !(dbsnp3$A1=="A" & dbsnp3$A2=="T" | dbsnp3$A1=="T" & dbsnp3$A2=="A" | dbsnp3$A1=="C" & dbsnp3$A2=="G" | dbsnp3$A1=="G" & dbsnp3$A2=="C") , ]
+dim(dbsnp3)
+
+# select only variants in chr 1-22, X, Y (there are many in scaffolds)
+dbsnp3$chrom <- gsub("chr", "", dbsnp3$chrom)
+dbsnp4 <- dbsnp3%>% filter(chrom %in%  c(as.character(1:22),'X','Y')) 
+
+# remove very low frequency variants
+dbsnp4 <- dbsnp4[(dbsnp4$Frq.A1>=0.001 & dbsnp4$Frq.A1<=0.999),]
+dbsnp4 <- dbsnp4[(dbsnp4$Frq.A2>=0.001 & dbsnp4$Frq.A2<=0.999),]
+
+# Remove ANY duplicated variants by SNP id
+dbsnp5 <- dbsnp4[!(duplicated(dbsnp4$name) | duplicated(dbsnp4$name, fromLast = TRUE)), ]
+
+# Remove ANY duplicated variants by chr_pos 
+dbsnp5$CHRBP_hg19 <- paste(dbsnp5$chrom, dbsnp5$chromEnd, sep="_")   
+dbsnp6 <- dbsnp5[!(duplicated(dbsnp5$CHRBP_hg19) | duplicated(dbsnp5$CHRBP_hg19, fromLast = TRUE)), ]
+
+# prepare for saving
+colnames(dbsnp6) <- c("CHR_dbsnp","BP_dbsnp","RSID_dbsnp","STRAND_dbsnp","A1_dbsnp","A2_dbsnp", "FRQ.A1_dbsnp","FRQ.A2_dbsnp","CHRBP_hg19")
+
+# Add the reverse-complement of each allele (will make it easier to make sure you're matching A1/A2 from another file later on - when we want to match rsid only if it matches both A1/A2 from this reference)
+dbsnp6$A1_dbsnp_rc <- ifelse(dbsnp6$A1_dbsnp=="A", "T", 
+						ifelse(dbsnp6$A1_dbsnp=="T", "A",  
+							ifelse(dbsnp6$A1_dbsnp=="G", "C", 
+								ifelse(dbsnp6$A1_dbsnp=="C", "G", "ERROR"))))  
+
+dbsnp6$A2_dbsnp_rc <- ifelse(dbsnp6$A2_dbsnp=="A", "T", 
+						ifelse(dbsnp6$A2_dbsnp=="T", "A",  
+							ifelse(dbsnp6$A2_dbsnp=="G", "C", 
+								ifelse(dbsnp6$A2_dbsnp=="C", "G", "ERROR"))))  
+table(dbsnp6$A2_dbsnp)
+table(dbsnp6$A2_dbsnp_rc)
+
+# Sort by CHR and BP
+dbsnp6 <- dbsnp6[ with(dbsnp6, order(CHR_dbsnp, BP_dbsnp)), ]
+
+write.table(dbsnp6,gzfile("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz"), quote=FALSE, sep="\t", row.names=FALSE, col.names=TRUE)
+

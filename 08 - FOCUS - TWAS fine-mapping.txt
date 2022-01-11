@@ -1,0 +1,139 @@
+############################
+# FOCUS
+###########################
+# conda create --prefix=~/scratch/.conda/focus -c r python r-base
+# conda activate ~/scratch/.conda/focus
+# pip install rpy2
+# pip install mygene
+# pip install pyfocus --user
+conda activate ~/scratch/.conda/focus
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus
+
+wget https://data.broadinstitute.org/alkesgroup/LDSCORE/1000G_Phase3_plinkfiles.tgz
+tar -xvzf 1000G_Phase3_plinkfiles.tgz
+
+wget https://www.dropbox.com/s/ep3dzlqnp7p8e5j/focus.db?dl=0
+mv focus.db?dl=0 focus.db
+
+
+#############
+# create weights FOR ALL tissues
+#############
+
+###################### /users/k1642468/commonmind/Rodrigo/hiv_meta_final/create_focus_db.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out		# %x = job name (script name); %A = Job array's master job allocation number; %a = Job array ID (index) number.
+#SBATCH -p shared,brc								# Request a shared node
+#SBATCH --time=0-30:00:00 							# format: days-hours:minutes.
+#SBATCH --mem-per-cpu=60000							# 9GB, in Mb - if unspecified, task will be given 1 GB only.
+#SBATCH --ntasks=1									# requests x cores from any node, per task.
+      #     SBATCH --array=1-22								# range%constainvalue => 1-22%4 would constrain 22 tasks to 4 at a time 
+conda activate ~/scratch/.conda/focus
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/
+
+tissues=("Adipose_Subcutaneous" "Adipose_Visceral_Omentum" "Adrenal_Gland" "Artery_Aorta" "Artery_Coronary" "Artery_Tibial" "Brain_Amygdala" "Brain_Anterior_cingulate_cortex_BA24" "Brain_Caudate_basal_ganglia" "Brain_Cerebellar_Hemisphere" "Brain_Cerebellum" "Brain_Cortex" "Brain_Frontal_Cortex_BA9" "Brain_Hippocampus" "Brain_Hypothalamus" "Brain_Nucleus_accumbens_basal_ganglia" "Brain_Putamen_basal_ganglia" "Brain_Spinal_cord_cervical_c-1" "Brain_Substantia_nigra" "Breast_Mammary_Tissue" "Cells_EBV-transformed_lymphocytes" "Cells_Transformed_fibroblasts" "Colon_Sigmoid" "Colon_Transverse" "Esophagus_Gastroesophageal_Junction" "Esophagus_Mucosa" "Esophagus_Muscularis" "Heart_Atrial_Appendage" "Heart_Left_Ventricle" "Liver" "Lung" "Minor_Salivary_Gland" "Muscle_Skeletal" "Nerve_Tibial" "Ovary" "Pancreas" "Pituitary" "Prostate" "Skin_Not_Sun_Exposed_Suprapubic" "Skin_Sun_Exposed_Lower_leg" "Small_Intestine_Terminal_Ileum" "Spleen" "Stomach" "Testis" "Thyroid" "Uterus" "Vagina" "Whole_Blood")
+
+for tissue in ${tissues[@]}; do
+focus import /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca/${tissue}.P01.pos fusion --tissue ${tissue} --name gtex --output /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed; 
+done
+
+tissue="YFS.BLOOD.RNAARR"
+focus import /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca/${tissue}.P01.pos fusion --tissue Whole_Blood --name YFS --output /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed 
+
+tissue="NTR.BLOOD.RNAARR"
+focus import /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca/${tissue}.P01.pos fusion --tissue Whole_Blood --name NTR --output /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed 
+# final DB is /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed.db
+
+############################################################
+
+
+#############
+# munge gwas for FOCUS
+#############
+focus munge ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz --output ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz.cleaned
+
+
+mkdir -p /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus
+
+
+###################### /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS__permutation/scripts/focus_agnostic_final.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out		# %x = job name (script name); %A = Job array's master job allocation number; %a = Job array ID (index) number.
+#SBATCH -p shared,brc								# Request a shared node
+#SBATCH --time=0-36:00:00 							# format: days-hours:minutes.
+#SBATCH --mem-per-cpu=50000							# 9GB, in Mb - if unspecified, task will be given 1 GB only.
+#SBATCH --array=1-22								# range%constainvalue => 1-22%4 would constrain 22 tasks to 4 at a time 
+
+trap 'echo "# $(date) (time) $BASH_COMMAND"' DEBUG
+
+conda activate ~/scratch/.conda/focus
+
+CHR=${SLURM_ARRAY_TASK_ID}
+
+focus finemap ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed.db --chr ${CHR} --plot --p-threshold 5E-05 --out /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus/HIV.acq.agnostic.blood_fixed.5e-5.chr.${CHR}
+
+#################################
+
+
+# Process FOCUS results:
+conda activate fusion_final
+R
+# suppressMessages(library('dplyr'))
+suppressMessages(library('readr'))
+# suppressMessages(library('data.table'))
+# suppressMessages(library("tidyr"))
+# library(stringr)
+
+res_folder <- "/mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus/"
+file_list <- list.files(path=res_folder, "*.tsv")
+
+dat<-NULL
+
+for (i in 1:length(file_list) ){
+#######->  filename<-paste0(opt$file_location,file_list[i])
+filename<-paste0(res_folder,file_list[i])
+tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+dat<-rbind(dat,tmp)
+}
+
+
+dat <- dat[dat$pip > 0.5, ]
+dat <- dat[!dat$ens_gene_id=="NULL.MODEL",]
+write.table(dat, "/mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus_sig_results.tsv", sep="\t", quote=F, row.names=F, col.names=T)
+
+
+##############
+# FOCUS with prioritization
+##############
+conda activate ~/scratch/.conda/focus
+mkdir /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus_prioritized                                   
+cd /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus_prioritized                                   
+
+CHR=15 
+tissue="Cells_EBV-transformed_lymphocytes"
+gene="HERC1"
+db=/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/focus_new_weights_all_tissues/focus_all_blood_fixed.db
+focus finemap ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+
+
+CHR=6
+tissue="Colon_Transverse"
+gene="HIST1H4K"
+focus finemap ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+# The correct window for HIST1H4K is around 27 and 28 Mb
+
+
+CHR=6
+tissue="Esophagus_Muscularis"
+gene="MICB"
+focus finemap ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+# The correct window for MICB is around 30 and 31 mb
+
+
+CHR=6
+tissue="Brain_Anterior_cingulate_cortex_BA24"
+gene="PSORS1C1"
+focus finemap ~/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_sample_size1_filtered_annotated_focus.txt.gz.cleaned.sumstats.gz /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR.${CHR} ${db} --chr ${CHR} --tissue ${tissue} --plot --p-threshold 5E-05 --out /mnt/lustre/datasets/commonmind/Rodrigo/hiv_meta_final/focus_prioritized/HIV.acq.${tissue}.prioritized.5e-5.chr.${CHR}.${gene}
+# The correct window for PSORS1C1 is around 29 and 31 Mb
+

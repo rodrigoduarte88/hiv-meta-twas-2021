@@ -1,0 +1,453 @@
+# Prepare environment (from previous work)
+# Download and unpack the  FUSION software package from github:
+cd ~/commonmind/Rodrigo/twas/fusion/
+wget https://github.com/gusevlab/fusion_twas/archive/master.zip
+unzip master.zip
+cd fusion_twas-master
+
+# Download and unpack the (1000 Genomes)  LD reference data:
+wget https://data.broadinstitute.org/alkesgroup/FUSION/LDREF.tar.bz2
+tar xjvf LDREF.tar.bz2
+
+# Download and unpack the plink2R library (by Gad Abraham):
+wget https://github.com/gabraham/plink2R/archive/master.zip
+unzip master.zip
+
+mkdir weights_scca && cd weights_scca
+# download and decompress FUSION weights
+# cd ~/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca
+wget http://gusevlab.org/projects/fusion/weights/sCCA_weights_v8_2.zip
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Adipose_Subcutaneous.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Adipose_Visceral_Omentum.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Adrenal_Gland.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Artery_Aorta.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Artery_Coronary.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Artery_Tibial.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Amygdala.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Anterior_cingulate_cortex_BA24.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Caudate_basal_ganglia.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Cerebellar_Hemisphere.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Cerebellum.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Cortex.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Frontal_Cortex_BA9.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Hippocampus.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Hypothalamus.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Nucleus_accumbens_basal_ganglia.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Putamen_basal_ganglia.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Spinal_cord_cervical_c-1.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Brain_Substantia_nigra.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Breast_Mammary_Tissue.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Cells_EBV-transformed_lymphocytes.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Cells_Transformed_fibroblasts.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Colon_Sigmoid.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Colon_Transverse.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Esophagus_Gastroesophageal_Junction.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Esophagus_Mucosa.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Esophagus_Muscularis.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Heart_Atrial_Appendage.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Heart_Left_Ventricle.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Liver.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Lung.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Minor_Salivary_Gland.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Muscle_Skeletal.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Nerve_Tibial.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Ovary.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Pancreas.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Pituitary.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Prostate.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Skin_Not_Sun_Exposed_Suprapubic.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Skin_Sun_Exposed_Lower_leg.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Small_Intestine_Terminal_Ileum.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Spleen.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Stomach.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Testis.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Thyroid.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Uterus.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Vagina.P01.tar.bz2
+wget http://gusevlab.org/projects/fusion/weights/GTEx.Whole_Blood.P01.tar.bz2
+wget https://data.broadinstitute.org/alkesgroup/FUSION/WGT/NTR.BLOOD.RNAARR.tar.bz2
+wget https://data.broadinstitute.org/alkesgroup/FUSION/WGT/YFS.BLOOD.RNAARR.tar.bz2
+
+# decompress sCCA weights and put in current folder
+unzip sCCA_weights_v8_2.zip
+mv sCCA_weights_v8/* .
+
+# rename sCCA weights so they also have P01 in the name, for comptability
+mv sCCA1.pos sCCA1.P01.pos
+mv sCCA2.pos sCCA2.P01.pos
+mv sCCA3.pos sCCA3.P01.pos
+
+# decompress single tissue gtex weights and leave at current folder too
+cat *.tar.bz2 | tar -xjf - -i
+mv YFS.BLOOD.RNAARR.pos YFS.BLOOD.RNAARR.P01.pos
+mv NTR.BLOOD.RNAARR.pos NTR.BLOOD.RNAARR.P01.pos
+
+# Launch R and install required libraries:
+conda activate fusion_final # has R installed
+R
+# R>
+install.packages(c('optparse','RColorBrewer','RcppEigen'))
+install.packages('plink2R-master/plink2R/',repos=NULL) # a nightmare to install...
+
+# Run TWAS per chromosome, per tissue. 
+# Mk dir for *.dat files. (output dir)
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/scripts
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_backup
+
+
+############# /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out
+#SBATCH -p shared,brc
+#SBATCH --time=0-0:10:00
+#SBATCH --mem-per-cpu=5000
+#SBATCH --ntasks=1
+#SBATCH --array=1-22
+
+trap 'echo "# $(date) (time) $BASH_COMMAND"' DEBUG
+
+CHR=${SLURM_ARRAY_TASK_ID}
+
+conda activate fusion_final
+tissues=("YFS.BLOOD.RNAARR" "NTR.BLOOD.RNAARR" "sCCA1" "sCCA2" "sCCA3" "Adipose_Subcutaneous" "Adipose_Visceral_Omentum" "Adrenal_Gland" "Artery_Aorta" "Artery_Coronary" "Artery_Tibial" "Brain_Amygdala" "Brain_Anterior_cingulate_cortex_BA24" "Brain_Caudate_basal_ganglia" "Brain_Cerebellar_Hemisphere" "Brain_Cerebellum" "Brain_Cortex" "Brain_Frontal_Cortex_BA9" "Brain_Hippocampus" "Brain_Hypothalamus" "Brain_Nucleus_accumbens_basal_ganglia" "Brain_Putamen_basal_ganglia" "Brain_Spinal_cord_cervical_c-1" "Brain_Substantia_nigra" "Breast_Mammary_Tissue" "Cells_EBV-transformed_lymphocytes" "Cells_Transformed_fibroblasts" "Colon_Sigmoid" "Colon_Transverse" "Esophagus_Gastroesophageal_Junction" "Esophagus_Mucosa" "Esophagus_Muscularis" "Heart_Atrial_Appendage" "Heart_Left_Ventricle" "Liver" "Lung" "Minor_Salivary_Gland" "Muscle_Skeletal" "Nerve_Tibial" "Ovary" "Pancreas" "Pituitary" "Prostate" "Skin_Not_Sun_Exposed_Suprapubic" "Skin_Sun_Exposed_Lower_leg" "Small_Intestine_Terminal_Ileum" "Spleen" "Stomach" "Testis" "Thyroid" "Uterus" "Vagina" "Whole_Blood")
+
+for tissue in "${tissues[@]}"; do
+sbatch --export=TISSUE=${tissue},CHROMOSOME=${CHR} /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS_rscript.sh
+sleep 1
+done
+#########################################################
+
+
+###################### /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS_rscript.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out		# %x = job name (script name); %A = Job array's master job allocation number; %a = Job array ID (index) number.
+#SBATCH -p shared,brc								# Request a shared node
+#SBATCH --time=0-1:00:00 							# format: days-hours:minutes.
+#SBATCH --mem-per-cpu=20000							# 9GB, in Mb - if unspecified, task will be given 1 GB only.
+#SBATCH --ntasks=1									# requests x cores from any node, per task.
+#	SBATCH --array=1-22								# range%constainvalue => 1-22%4 would constrain 22 tasks to 4 at a time 
+
+trap 'echo "# $(date) (time) $BASH_COMMAND"' DEBUG
+
+conda activate fusion_final
+echo "Analyzing ${TISSUE}... Chromosome ${CHROMOSOME}"
+Rscript /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/FUSION.assoc_test.R \
+--sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged_twas.txt.gz.sumstats.gz \
+--weights /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca/${TISSUE}.P01.pos \
+--weights_dir /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/weights_scca/ \
+--ref_ld_chr /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR. \
+--chr ${CHROMOSOME} \
+--out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/HIV_acquisition.${TISSUE}.${CHROMOSOME}.dat
+
+##########################################################
+sbatch /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/scripts/fusion_sCCA_ACAT_TWAS.sh
+
+# check they all ran
+ls /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/* | wc -l 
+# 1219 = that's 53 single tissues (48 gtex tissues + 3 sCCA + 2 blood cohorts) x 23 (22 chromosomes + 1 mhc region) files
+# In Rosalind, you can explore jobs that failed using sacct, and/or use something like this to relaunch failed jobs: scontrol release comma_separated_jobids_that_failed
+
+# create a backup folder with these results (in case you want to play with thresholds and tissues included)
+cp /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/* /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_backup/.
+
+
+# the sCCA dat files were created using ENSEMBL id, which should be converted to gene symbol. Also, add a PANEL to the first column (like in the gtex files!)
+conda activate Renv
+R 
+                 #R>
+                suppressMessages(library(dplyr))
+                suppressMessages(library(tidyr))
+                suppressMessages(library(readr))
+                suppressMessages(library(stringr))
+                suppressMessages(library(org.Hs.eg.db))
+                file_location <- "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/"   
+                file_list <- list.files(path=file_location, pattern="HIV_acquisition.sCCA")
+                ######## WARNING: This will replace the original files outputted by FUSION!
+               
+              
+                for (i in 1:length(file_list) ) {
+                # read file
+                filename<-paste0(file_location,file_list[i])
+                tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+
+                # add panel name. First create function that will detect panel name based on FILE column. Thanks to Helian / https://github.com/fenghelian/sCCA_ACAT_TWAS/blob/main/compute_acatP.r
+                get_panel<-function(file_name){
+                pat = "sCCA[0-9]"
+                panel = str_match(file_name,pattern = pat)[1,1]
+                return(panel)
+                }
+                panel_list <- lapply(tmp$FILE, FUN=get_panel)
+                panel_list <- unlist(panel_list, use.names=FALSE)
+                tmp$PANEL <- ifelse(is.na(tmp$PANEL),panel_list,tmp$PANEL)
+
+                # convert ensembl id to gene symbol in tmp var
+                library("org.Hs.eg.db") # see https://www.biostars.org/p/178726/
+                genes <- data.frame(tmp$ID)
+                colnames(genes) <- "ensembl"
+                # make sure ensembl ids don't have dots in their names
+                genes$ensembl = gsub("\\..*","",genes$ensembl)
+                genes$symbol <- mapIds(org.Hs.eg.db,keys=genes$ensembl, column="SYMBOL", keytype="ENSEMBL", multiVals="first")
+                tmp$ID <- ifelse(is.na(genes$symbol),"NA", genes$symbol)  # removing ensembl genes that don't have a gene symbol
+                tmp <- tmp[!tmp$ID=="NA",]
+                write.table(tmp,paste0(file_location,file_list[i]),sep = "\t",quote = F,row.names = F,col.names = T)
+                }
+
+
+# The YFR/NTR samples had no panel name but had gene name. Fix this using similar code:
+conda activate Renv
+R
+                #R>
+                suppressMessages(library(dplyr))
+                suppressMessages(library(tidyr))
+                suppressMessages(library(readr))
+                suppressMessages(library(stringr))
+                suppressMessages(library(org.Hs.eg.db))
+                file_location <- "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/"   
+                pattern <- c("HIV_acquisition.YFS", "HIV_acquisition.NTR")
+                file_list <- list.files(path=file_location, pattern=paste0(pattern, collapse="|") )
+                ######## WARNING: This will replace the original files outputted by FUSION!
+                             
+                for (i in 1:length(file_list) ) {
+                # read file
+                filename<-paste0(file_location,file_list[i])
+                tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+
+                # add panel name. First create function that will detect panel name based on FILE column. Thanks to Helian / https://github.com/fenghelian/sCCA_ACAT_TWAS/blob/main/compute_acatP.r
+                get_panel<-function(file_name){
+                pat = "YFS|NTR"
+                panel = str_match(file_name,pattern = pat)[1,1]
+                return(panel)
+                }
+                panel_list <- lapply(tmp$FILE, FUN=get_panel)
+                panel_list <- unlist(panel_list, use.names=FALSE)
+                tmp$PANEL <- ifelse(is.na(tmp$PANEL),panel_list,tmp$PANEL)
+
+                write.table(tmp,paste0(file_location,file_list[i]),sep = "\t",quote = F,row.names = F,col.names = T)
+                }
+
+
+###################################################
+# Run the sCCA-ACAT TWAS, and identify number of unique genes
+###################################################
+conda activate fusion_final
+R
+# Modified from https://github.com/fenghelian/sCCA_ACAT_TWAS/blob/main/compute_acatP.r
+suppressMessages(library('dplyr'))
+suppressMessages(library("tidyr"))
+suppressMessages(library("readr"))
+suppressMessages(library("optparse"))
+library(stringr)
+
+#-> option_list = list(
+#   make_option("--file_location", action="store", default=NA, type='character',
+#               help="Path to TWAS result files from FUSION [required]"),
+#   make_option("--out", action="store", default=NA, type='character',
+#               help="Path to output files [required]")
+# )
+# opt = parse_args(OptionParser(option_list=option_list))
+
+# ACAT function
+CCT.pval<-function(Pvals,Weights=NULL){
+  #### check if there is NA
+  if (sum(is.na(Pvals))>0){
+    if(all(is.na(Pvals))){
+      return(NA)
+    }else{
+      Pvals=Pvals[!is.na(Pvals)]
+      if(length(Pvals)==1){
+        return(Pvals)
+      }
+    }
+    #stop("Cannot have NAs in the p-values!")
+  }
+  #### check if Pvals are between 0 and 1
+  if ((sum(Pvals<0)+sum(Pvals>1))>0){
+    warning("P-values must be between 0 and 1!")
+  }
+  #### check if there are pvals that are either exactly 0 or 1.
+  is.zero<-(sum(Pvals==0)>=1)
+  is.one<-(sum(Pvals==1)>=1)
+  if (is.zero && is.one){
+    warning("Cannot have both 0 and 1 p-values!")
+  }
+  if (is.zero){
+    Pvals[Pvals==0]<-as.numeric(1.507e-143)
+    warning("There are p-values that are exactly 1!")
+    #return(0)
+  }
+  if (is.one){
+    Pvals[Pvals==1]<-1-1/length(Pvals)
+    warning("There are p-values that are exactly 1!")
+  }
+  
+  #### Default: equal weights. If not, check the validity of the user supplied weights and standadize them.
+  if (is.null(Weights)){
+    Weights<-rep(1/length(Pvals),length(Pvals))
+  }else if (length(Weights)!=length(Pvals)){
+    stop("The length of weights should be the same as that of the p-values")
+  }else if (sum(Weights<0)>0){
+    stop("All the weights must be positive!")
+  }else{
+    Weights<-Weights/sum(Weights)
+  }
+  
+  
+  #### check if there are very small non-zero p values
+  is.small<-(Pvals<1e-16)
+  if (sum(is.small)==0){
+    cct.stat<-sum(Weights*tan((0.5-Pvals)*pi))
+  }else{
+    cct.stat<-sum((Weights[is.small]/Pvals[is.small])/pi)
+    cct.stat<-cct.stat+sum(Weights[!is.small]*tan((0.5-Pvals[!is.small])*pi))
+  }
+  #### check if the test statistic is very large.
+  if (cct.stat>1e+15){
+    pval<-(1/cct.stat)/pi
+  }else{
+    pval<-1-pcauchy(cct.stat)
+  }
+  return(pval)
+}
+
+# get_panel<-function(file_name){
+#   pat = "sCCA[0-9]"
+#   panel = str_match(file_name,pattern = pat)[1,1]
+#   return(panel)
+# }
+# 
+# # get panels non scca
+# get_panel_nonscca = function(string){
+#   (unlist(strsplit(string, "\\/")))[4]
+# }
+# 
+
+
+#Read in data
+#-> file_list <- list.files(path=opt$file_location)
+file_list <- list.files(path="/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/")
+
+dat<-NULL
+
+for (i in 1:length(file_list) ){
+#######->  filename<-paste0(opt$file_location,file_list[i])
+filename<-paste0("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/",file_list[i])
+tmp <- read_delim(filename,"\t", escape_double = FALSE, trim_ws = TRUE)
+dat<-rbind(dat,tmp)
+}
+
+unique <- unique(dat$ID)
+length(unique) # 27540 unique elements = Bonf -> 0.05/27540 => 1.815541031227306e-6
+length(table(dat$PANEL)) # 53 (48 single tissues + 3 scca + 2 blood cohorts)
+table(is.na(dat$PANEL))
+
+# Get ACAT Pvalue
+g_list<-dat%>%group_by(ID,PANEL)%>%summarize(n=n())
+g_list<-g_list$ID[g_list$n>1]
+dat<-dat%>%filter(!ID %in% g_list)
+dat<-dat%>%dplyr::select(c(PANEL,ID,TWAS.P))
+# make sure there are no P's = 1
+dat$TWAS.P <- ifelse(dat$TWAS.P==1, "NA", dat$TWAS.P)
+dat[,3]<-as.data.frame(sapply(dat[,3], as.numeric))
+dat <- dat%>%filter(!is.na(TWAS.P))
+
+dat_spread <- dat%>% spread(key = PANEL,value = TWAS.P, drop = T)
+n_col <-dim(dat_spread)[2]
+acat<-apply(dat_spread[,2:n_col],FUN=CCT.pval,1)
+dat_spread$acat<-acat
+dat_spread$acat_bonf <- p.adjust(dat_spread$acat, method="bonferroni")
+dat_spread$acat_fdr <- p.adjust(dat_spread$acat, method="fdr")
+dat_spread <- dat_spread[order(dat_spread$acat),]
+
+write.table(dat_spread,"/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/acat_pvalue_hiv_final.tsv",sep = "\t",quote = F,row.names = F,col.names = T)
+# write.table(dat_spread,opt$out,sep = "\t",quote = F,row.names = F,col.names = T)
+
+
+##################################################################
+# TWAS PLOTTER, by Oliver Pain # https://github.com/opain/TWAS-plotter
+# install.packages(c('data.table','optparse','ggplot2','ggrepel','cowplot'))
+conda activate fusion_final
+
+# Combine per chromomsome TWAS results
+head -1 /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/HIV_acquisition.Adipose_Subcutaneous.1.dat > /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files
+tail -n +2 -q /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles/HIV_acquisition.* >> /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files
+
+# Rscript ~/programs/twas-plotter/TWAS-plotter/TWAS-plotter.V1.0.r \
+# --twas /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files \
+# --output /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/TWAS_plotter
+
+Rscript ~/programs/twas-plotter/TWAS-plotter/TWAS-plotter.V1.0.r \
+--twas /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files \
+--sig_p 1.815541031227306e-6  \
+--output /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/TWAS_plotter_sig_unique_elements
+
+
+##################################################
+
+# Extract significant features and plot conditional analyses
+x=1.815541031227306e-6
+cat /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files | awk -v var="${x}" 'NR == 1 || $20 < var' > /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files.Sig
+
+# Run conditional analysis for all chromomsomes with significant features
+conda activate fusion_final
+for CHR in {1..22}; do
+status=$(awk -v var="${CHR}" '$4 == var {print "Present";exit;}' /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files.Sig)
+if [ "$status" == "Present" ]; then
+echo "Present chr "$CHR	
+Rscript /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/FUSION.post_process.R \
+--input /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files.Sig \
+--sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged_twas.txt.gz.sumstats.gz \
+--ref_ld_chr /users/k1642468/commonmind/Rodrigo/twas/fusion/fusion_twas-master/LDREF/1000G.EUR. \
+--out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files.Sig.PostProc.${CHR} \
+--chr ${CHR} \
+--save_loci \
+--plot \
+--legend joint \
+--locus_win 100000
+else
+echo "Not present. Skipping Chr "$CHR
+fi
+done
+
+#####################
+# Create qq-plot from TWAS results # see https://opain.github.io/MDD-TWAS/MDD_TWAS.html#212_twas_analysis
+#####################
+# load file with all hits - not just sign, ones
+conda activate fusion_final
+R
+    twas_sub_correct <- read.table("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/all_dat_files", header=T, stringsAsFactors = F)
+
+    ggd.qqplot = function(pvector, main=NULL, ...) {
+    o = -log10(sort(pvector,decreasing=F))
+    e = -log10( 1:length(o)/length(o) )
+    plot(e,o,pch=19,cex=1, main=main, ...,
+        xlab=expression(Expected~~-log[10](italic(p))),
+        ylab=expression(Observed~~-log[10](italic(p))),
+        xlim=c(0,max(e)), ylim=c(0,max(o)))
+    lines(e,e,col="red")
+    }
+
+    pvalues <- twas_sub_correct$TWAS.P
+
+    # Add a title
+    png("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/hiv_acq_TWAS_AllTissues_QQplot.png",width = 2000, height = 2000, units = "px", res=300)
+    ggd.qqplot(pvalues, "QQ-plot of TWAS p-values")
+    dev.off() 
+
+    ###
+    # Histogram of p-values
+    ###
+
+    library(ggplot2)
+
+    ## HISTOGRAM OF P-VALUES
+    png("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/fusion_sCCA_ACAT_TWAS/datfiles_combined/hiv_acq_TWAS_AllTissues_pValHist.png",width = 2000, height = 2000, units = "px", res=300)
+    hist(twas_sub_correct$TWAS.P,
+        main = "Histogram of TWAS p-values",  
+        xlab ="P-values", 
+        ylab = "Frequency")
+    dev.off()
+
+
+###################

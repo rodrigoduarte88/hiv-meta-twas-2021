@@ -1,0 +1,341 @@
+# Prepare data for the ldsc munge_sumstats.py script: https://github.com/bulik/ldsc/blob/master/munge_sumstats.py
+
+srun -p shared,brc -n 1 --mem=50000 --time 3:00:00 --pty /bin/bash
+mkdir -p /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs
+
+# FinnGen, HIV status, 357 cases vs 218435 controls # Link to manifest file here: https://console.cloud.google.com/storage/browser/_details/finngen-public-data-r5/summary_stats/R5_manifest.tsv
+wget XXXXXX
+
+# UK Biobank, 20002_1439 (self-reported: hiv/aids), 285 cases, 360856 controls
+wget XXXXXX
+
+# HIV acquisition from McLaren et al 2013 paper (also analyzed in Powell et al 2020 Sci Rep), 6,334 infected patients and 7,247 population controls
+# # # Link has to be requested to authors # # # 
+wget XXXXXX
+
+# HIV acquisition from Johnson et al. 2015 PLoS One (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0118149); 327 cases. 805 controls, total 1132.
+wget XXXXXX
+
+conda activate general
+gunzip mclaren.txt.gz
+gunzip finngen.gz
+bgzip --decompress ukbb.tsv.bgz
+unzip johnson.zip
+
+# for Johnson's files, remove decompressed files and keep only originals
+rm uhs.ea.chr*.csv
+# check headers of individual chr files to make sure they're all the same
+for i in uhs.ea.chr*.case_control.csv.gz; do zcat $i | head -1; done
+# cat individual chr files, removing header from files after the first.
+set -- uhs.ea.chr*.case_control.csv.gz
+{
+    zcat "$1"; shift
+    for file do
+        zcat "$file" | sed '1d'
+    done
+} > Johnson.txt
+
+dos2unix finngen
+dos2unix ukbb.tsv
+dos2unix Johnson.txt
+dos2unix mclaren.txt # gives error
+# dos2unix: Binary symbol found at line 19520646
+# dos2unix: Skipping binary file mclaren.txt
+
+awk '{if(NR==19520646) print $0}' mclaren.txt
+# line containing SNP "rs35756704" causes problems for R (wrong allowed number of columns)
+grep  "rs35756704"  mclaren.txt # single value with this prefi
+# deletes that line
+sed -i '/rs35756704/,+1 d'  mclaren.txt
+dos2unix mclaren.txt
+
+# let's check hg build and columns available (manually, based on headers)
+head mclaren.txt >head_mclaren
+head finngen > head_finngen
+head ukbb.tsv > head_ukbb
+head Johnson.txt > head_johnson
+
+# R>
+conda activate ldsc_R
+R
+
+#### Now, filter the studies individually
+######################################
+# Johnson study
+######################################
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson.txt", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+str(gwas)
+# filter by MAF
+gwas <- gwas[gwas$MAF > 0.01 & gwas$MAF < 0.99, ]
+# retain vars with Rsq (imputation score) > 0.8
+gwas <- gwas[gwas$Rsq > 0.8, ]
+
+# Not using: recalculate P (to remove any Genomic Control if it was applied)
+# gwas$P_recalc <- 2*pnorm(-abs(gwas$beta_SNP_add/gwas$sebeta_SNP_add))
+# all.equal(gwas$P_recalc, gwas$p) # the same - no genomic control
+# gwas$p <- gwas$P_recalc
+
+# keep relevant cols
+gwas <- select(gwas, name, A1, A2, beta_SNP_add,  sebeta_SNP_add, p, MAF)
+table(duplicated(gwas$name))
+# get chr coordinates from dbsnp file generated in previous script. Make sure that A1/A2 match with either combination of the possibilities from the reference file (A1_dbnsp AND A2_dbnsp), (A2_dbnsp AND A1_dbnsp), (A1_dbnsp_rc AND A2_dbnsp_rc), OR (A2_dbnsp_rc AND A1_dbnsp_rc))  
+dbsnp <- fread("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz", stringsAsFactors=F, h=T)
+gwas_annotated <- merge(gwas, dbsnp, by.x="name", by.y="RSID_dbsnp")
+dim(gwas_annotated) # 
+gwas_annotated$allele_match <- ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp & gwas_annotated$A2==gwas_annotated$A2_dbsnp), "match",   	
+									ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp & gwas_annotated$A2==gwas_annotated$A1_dbsnp), "match",   	
+										ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A2_dbsnp_rc), "match", 
+											ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A1_dbsnp_rc), "match","err")
+											)) )					
+table(gwas_annotated$allele_match) # there were 229 mismatches - triallelic variants potentially? Remove!
+gwas_annotated <- gwas_annotated[!gwas_annotated$allele_match=="err",]
+dim(gwas_annotated) # 5708600 
+
+# Are there variants in chromosome X?
+table(gwas_annotated$CHR_dbsnp) # there is one, which seems to be a mistake (it's originally in chr4), so remove it.
+gwas_annotated <- gwas_annotated %>% filter(CHR_dbsnp %in% (1:22)) # keep only hervs in chr1:22
+
+# No need to add CHR_BP since it's already in dbsnp file as CHRBP_hg19, but remove positional dups (there shouldn't be any!)
+gwas_annotated <- gwas_annotated[!(duplicated(gwas_annotated$CHRBP_hg19) | duplicated(gwas_annotated$CHRBP_hg19, fromLast=TRUE) ) ,]
+
+gwas_annotated <- dplyr::select(gwas_annotated, CHRBP_hg19, A1, A2, MAF, beta_SNP_add, sebeta_SNP_add, p, CHR_dbsnp, BP_dbsnp)
+colnames(gwas_annotated) <- c("CHR_BP", "A1", "A2","MAF","BETA","SE","P","CHR", "BP")
+
+gwas_annotated$Neff <- "930.16"
+
+write.table(gwas_annotated, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_2_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_2_for_samplesize_meta.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_3_for_samplesize_meta --snp CHR_BP --a1 A1 --a2 A2 --p P --N-col Neff"))
+
+munged <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_3_for_samplesize_meta.sumstats.gz", h=T, stringsAsFactors=F)
+
+merged <- merge(munged, gwas_annotated, by.x="SNP", by.y="CHR_BP")
+table(duplicated(merged$SNP))
+all.equal(merged$A1.x, merged$A1.y)
+all.equal(merged$A2.x, merged$A2.y)
+
+merged <- dplyr::select(merged, SNP, A1.x, A2.x, BETA, SE, P, MAF, Neff)
+colnames(merged)<- c("CHR_BP", "A1", "A2", "BETA", "SE","P","MAF", "Neff")
+write.table(merged, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+######################################
+# McLaren study
+######################################
+#R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren.txt", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+str(gwas)
+# there are NAs somewhere, impeding some numeric columns to be recognize as numeric. So force column as number to remove the NAs afterwards
+gwas$BP <- as.numeric(gwas$BP)
+gwas <- gwas[complete.cases(gwas[ , 3]),] # remove NAs
+# just check
+table(is.na(gwas$BP))
+table(is.na(gwas$CHR))
+table(gwas$CHR) # no chromosome X
+
+# add MAF column and filter
+gwas$FRQ_A_6334 <- as.numeric(gwas$FRQ_A_6334)
+gwas$FRQ_U_7247 <- as.numeric(gwas$FRQ_U_7247)
+gwas$MAF <- with(gwas, pmin(FRQ_A_6334,FRQ_U_7247))
+gwas <- gwas[gwas$MAF > 0.01 & gwas$MAF < 0.99, ]
+
+# Convert odds ratio to beta.
+gwas$OR <- as.numeric(gwas$OR)
+gwas$SE <- as.numeric(gwas$SE)
+gwas$P <- as.numeric(gwas$P)
+gwas$BETA <- log(gwas$OR)
+
+# recalculate P (to remove any Genomic Control if it was applied)
+# gwas$P_recalc <- 2*pnorm(-abs(gwas$BETA/gwas$SE))
+# all.equal(gwas$P_recalc, gwas$P) # they are not the same. Genomic control was applied.
+# gwas$P <- gwas$P_recalc
+
+# retain vars with INFO > 0.8
+gwas$INFO <- as.numeric(gwas$INFO)
+gwas <- gwas[gwas$INFO > 0.8, ]
+
+# remove variants that were not assessed in all studies of the McLaren meta-analysis, for appropriate per-snp weighing in the current meta-analysis
+gwas <- gwas[ grep("\\?", gwas$Direction, invert = TRUE) , ] # removes those with "?"
+gwas <- gwas[ grep("0", gwas$Direction, invert = TRUE) , ] # removes those with "0"
+table(nchar(gwas$Direction))
+gwas <- gwas[ nchar(gwas$Direction)==6, ]
+
+# add new name
+gwas$CHR_BP <- paste0(gwas$CHR,"_",gwas$BP)
+
+# remove duplicated variants by position
+gwas <- gwas[!(duplicated(gwas$CHR_BP) | duplicated(gwas$CHR_BP, fromLast=TRUE)),]
+
+# add Neff
+gwas$Neff <- "13519.62"
+
+# select final columns
+gwas <- dplyr::select(gwas, CHR_BP,CHR,BP,A1,A2,BETA,SE,P,MAF, Neff)
+colnames(gwas) <- c("CHR_BP","CHR","BP","A1","A2","BETA","SE","P","MAF","Neff")
+
+write.table(gwas, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_2_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_2_for_samplesize_meta.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_3_for_samplesize_meta --snp CHR_BP --a1 A1 --a2 A2 --p P --N-col Neff"))
+
+munged <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_3_for_samplesize_meta.sumstats.gz", h=T, stringsAsFactors=F)
+
+merged <- merge(munged, gwas, by.x="SNP", by.y="CHR_BP")
+
+merged <- dplyr::select(merged, SNP, A1.x, A2.x, BETA, SE, P,  MAF, Neff)
+colnames(merged)<- c("CHR_BP", "A1", "A2","BETA", "SE","P","MAF", "Neff")
+
+write.table(merged, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+   
+######################
+# UKBB #  warning: effect calculated based on ALT allele.
+######################
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb.tsv", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+
+# filter by allelic frequency 
+gwas <- gwas[(gwas$minor_AF>=0.01 & gwas$minor_AF<=0.99),]
+
+# use filter from Ben Neale's group to remove low_confidence_varriants (Expected case minor AC < 25, or AF < 0.001 - see here: https://docs.google.com/spreadsheets/d/1kvPoupSzsSFBNSztMzl04xMoSC3Kcx3CrjVf4yBmESU/edit?ts=5b5f17db#gid=227859291&range=C94)
+# gwas <- gwas[gwas$low_confidence_variant==FALSE,] # keep only "FALSE"
+
+# there's no INFO score but it says they've been already removed (http://www.nealelab.is/blog/2017/9/11/details-and-considerations-of-the-uk-biobank-gwas#:~:text=info%20score%20%3E%200.8%20)
+
+# Split var name by ":" to get CHR, BP, A1, A2 
+snp_ids <- data.frame(do.call('rbind', strsplit(as.character(gwas$variant),':',fixed=TRUE)))
+gwas$CHR <- as.character(snp_ids$X1) # it's got X chromosome - none of the others have.
+gwas$BP <- as.numeric(as.character(snp_ids$X2))
+# GOTCHA - note that Estimated effect size is based on alt allele! So A1 = X4 (ALT), and A2 = X3 (REF)
+gwas$A1 <- as.character(snp_ids$X4)
+gwas$A2 <- as.character(snp_ids$X3)
+
+table(is.na(gwas$BP))
+table(is.na(gwas$CHR))
+
+table(gwas$CHR) # there is a Chr X. Remove
+gwas <- gwas %>% filter(CHR %in% (1:22)) 
+
+# add new name
+gwas$CHR_BP <- paste0(gwas$CHR,"_",gwas$BP)
+
+# remove duplicated variants by position
+gwas <- gwas[!(duplicated(gwas$CHR_BP) | duplicated(gwas$CHR_BP, fromLast=TRUE)),]
+
+# recalculate P (to remove any Genomic Control if it was applied)
+# gwas$P_recalc <- 2*pnorm(-abs(gwas$beta/gwas$se))
+# all.equal(gwas$P_recalc, gwas$pval) # there is a small difference!
+# gwas$pval <- gwas$P_recalc
+
+# Add Neff
+gwas$Neff <- "1139.10"
+
+# select relevant columns
+gwas <- dplyr::select(gwas, CHR_BP,CHR,BP,A1,A2,beta,se,pval,minor_AF,Neff)
+colnames(gwas) <- c("CHR_BP","CHR","BP","A1","A2","BETA","SE","P","MAF","Neff")
+
+
+write.table(gwas, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_2_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_2_for_samplesize_meta.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_3_for_samplesize_meta --snp CHR_BP --a1 A1 --a2 A2 --p P --N-col Neff"))
+
+munged <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_3_for_samplesize_meta.sumstats.gz", h=T, stringsAsFactors=F)
+merged <- merge(munged, gwas, by.x="SNP", by.y="CHR_BP")
+merged <- dplyr::select(merged, SNP, A1.x, A2.x, BETA, SE, P, MAF, Neff)
+colnames(merged)<- c("CHR_BP", "A1", "A2","BETA", "SE","P", "MAF", "Neff")
+write.table(merged, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+
+   
+######################
+# FinnGen               ############ Warning: it's in hg38! Include liftover step
+######################
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+
+colnames(gwas)[1] <- "chrom"
+
+# filter by allelic frequency 
+gwas <- gwas[(gwas$maf>=0.01 & gwas$maf<=0.99),]
+
+# add new name
+gwas$CHR_BP <- paste0(gwas$chrom,"_",gwas$pos)
+
+table(gwas$chrom) # yes, there is X chromosome.
+
+# remove duplicated variants by position
+gwas <- gwas[!(duplicated(gwas$CHR_BP) | duplicated(gwas$CHR_BP, fromLast=TRUE)),]
+
+table(is.na(gwas$pos))
+table(is.na(gwas$chrom))
+
+# recalculate P (to remove any Genomic Control if it was applied)
+# gwas$P_recalc <- 2*pnorm(-abs(gwas$beta/gwas$sebeta))
+# all.equal(gwas$P_recalc, gwas$pval) # there is a small difference!
+# gwas$pval <- gwas$P_recalc
+
+# add Neff
+gwas$Neff <- "1425.67"
+
+gwas <- dplyr::select(gwas, CHR_BP,chrom,pos,ref,alt,beta,sebeta,pval, maf, Neff)
+# GOTCHA... beta was calcualted relative to alternative, not ref allele. Switch order of A1, A2, to A2, A1
+colnames(gwas) <- c("CHR_BP","CHR","BP","A2","A1","BETA","SE","P","MAF", "Neff")
+
+
+
+liftover <- data.frame(gwas$CHR, gwas$BP - 1, gwas$BP, gwas$CHR_BP)
+colnames(liftover) <- c("CHR", "START", "END", "OLD_SNP_ID_HG38")
+# add "chr" to start of each chr label
+liftover <- liftover %>% dplyr::mutate(CHR = paste("chr" , CHR, sep=""))
+
+options(scipen=999)
+
+write.table(liftover, "/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_2_liftover_for_samplesize_meta.txt", sep="\t", quote=F, row.names=F, col.names=F)
+
+system("liftOver /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_2_liftover_for_samplesize_meta.txt ~/precious/hg38ToHg19.over.chain /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_2_lifted_for_samplesize_meta /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_2_unlifted_for_samplesize_meta")
+
+lifted <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_2_lifted_for_samplesize_meta", sep="\t", stringsAsFactors=F, h=F)
+colnames(lifted) <- c("CHR_hg19", "START_hg19", "END_hg19", "CHR_BP_hg38")
+
+gwas_lifted <- merge(gwas, lifted, by.x="CHR_BP", by.y="CHR_BP_hg38")
+dim(gwas)
+dim(gwas_lifted) # lost a few that couldn't be lifted.
+colnames(gwas_lifted)[1] <- "CHR_BP_hg38"
+# remove "chr" from lifted chr name
+gwas_lifted$CHR_hg19 <- gsub('^chr', '', gwas_lifted$CHR_hg19)
+# create new chr_bp name to label snps, now based on hg19
+gwas_lifted$CHR_BP_hg19 <- paste0(gwas_lifted$CHR_hg19, "_", gwas_lifted$END_hg19)
+# remove duplicates again
+gwas_lifted <- gwas_lifted[!(duplicated(gwas_lifted$CHR_BP_hg19) | duplicated(gwas_lifted$CHR_BP_hg19, fromLast=TRUE)),]
+
+table(gwas_lifted$CHR_hg19)
+# remove any other chr than 1-22
+gwas_lifted <- gwas_lifted %>% filter(CHR_hg19 %in% (c(1:22))) # keep only hervs in chr1:22
+
+gwas_lifted <- dplyr::select(gwas_lifted, CHR_BP_hg19,CHR_hg19,END_hg19,A1,A2,BETA,SE,P,MAF, Neff)
+colnames(gwas_lifted) <- c("CHR_BP","CHR","BP","A1","A2","BETA","SE","P","MAF","Neff")
+
+write.table(gwas_lifted, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_2_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+
+system(paste0("munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_2_for_samplesize_meta.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_3_for_samplesize_meta --snp CHR_BP --a1 A1 --a2 A2 --p P --N-col Neff"))
+
+munged <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_3_for_samplesize_meta.sumstats.gz", h=T, stringsAsFactors=F)
+
+merged <- merge(munged, gwas_lifted, by.x="SNP", by.y="CHR_BP")
+
+merged <- dplyr::select(merged, SNP, A1.x, A2.x, BETA, SE, P, MAF,Neff)
+colnames(merged)<- c("CHR_BP", "A1", "A2","BETA", "SE","P","MAF","Neff")
+write.table(merged, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_samplesize_meta.txt.gz"), sep="\t", quote=F, row.names=F, col.names=T)
+

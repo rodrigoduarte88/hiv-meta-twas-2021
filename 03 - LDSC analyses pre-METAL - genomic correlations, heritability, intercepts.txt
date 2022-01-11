@@ -1,0 +1,238 @@
+# Get the filtered files from previously, append rsids, and run through munge_sumstats.py again to extract only w_hm3.snplist, then run ldsc's genomic correlations.
+
+# Download files needed for genetic correlations
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/
+# eur_w_ld_chr 
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/eur_w_ld_chr.tar.bz2 
+tar xjf eur_w_ld_chr.tar.bz2
+# w_hm3.snplist 
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/w_hm3.snplist.bz2
+bzip2 -d w_hm3.snplist.bz2
+
+
+
+######################################
+# Johnson study
+######################################
+# R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_samplesize_meta.txt.gz", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+
+# add rs ids from database
+dbsnp <- fread("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz", stringsAsFactors=F, h=T)
+gwas_annotated <- merge(gwas, dbsnp, by.x="CHR_BP", by.y="CHRBP_hg19")
+dim(gwas)           # 5708599
+dim(gwas_annotated) # 5708599 # this was the file that I had to re-annotate to get the chr/bp, so not expecting to differ at this stage. The others will.
+
+gwas_annotated$allele_match <- ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp & gwas_annotated$A2==gwas_annotated$A2_dbsnp), "match",   	
+									ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp & gwas_annotated$A2==gwas_annotated$A1_dbsnp), "match",   	
+										ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A2_dbsnp_rc), "match", 
+											ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A1_dbsnp_rc), "match","err")
+											)) )					
+table(gwas_annotated$allele_match) # no mismatches, as expected
+gwas_annotated <- gwas_annotated[!gwas_annotated$allele_match=="err",]
+dim(gwas_annotated) # 5708599
+
+# Now, we wanna follow through with the rsids... make sure there are no dups. Not necessary since the database already contained non-dup rs ids and chr_bp coordinates.
+gwas_annotated <- gwas_annotated[!(duplicated(gwas_annotated$RSID_dbsnp) | duplicated(gwas_annotated$RSID_dbsnp, fromLast=TRUE) ) ,]
+
+gwas_annotated <- dplyr::select(gwas_annotated, RSID_dbsnp, A1, A2, P, BETA, Neff)
+colnames(gwas_annotated) <- c("SNP", "A1", "A2","P","BETA", "Neff")
+dim(gwas_annotated) #  5708599
+write.table(gwas_annotated, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_ldsc_only.txt.gz"), sep=" ", quote=F, row.names=F, col.names=T)
+
+
+
+
+######################################
+# McLaren study
+######################################
+# R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_samplesize_meta.txt.gz", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+
+# add rs ids from database
+dbsnp <- fread("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz", stringsAsFactors=F, h=T)
+gwas_annotated <- merge(gwas, dbsnp, by.x="CHR_BP", by.y="CHRBP_hg19")
+dim(gwas)           # 5641480
+dim(gwas_annotated) # 5348009
+
+gwas_annotated$allele_match <- ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp & gwas_annotated$A2==gwas_annotated$A2_dbsnp), "match",   	
+									ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp & gwas_annotated$A2==gwas_annotated$A1_dbsnp), "match",   	
+										ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A2_dbsnp_rc), "match", 
+											ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A1_dbsnp_rc), "match","err")
+											)) )					
+table(gwas_annotated$allele_match) # 82 mismatches
+gwas_annotated <- gwas_annotated[!gwas_annotated$allele_match=="err",]
+dim(gwas_annotated) # 5347927
+
+# Now, we wanna follow through with the rsids... make sure there are no dups. Not necessary since the database already contained non-dup rs ids and chr_bp coordinates.
+gwas_annotated <- gwas_annotated[!(duplicated(gwas_annotated$RSID_dbsnp) | duplicated(gwas_annotated$RSID_dbsnp, fromLast=TRUE) ) ,]
+
+gwas_annotated <- dplyr::select(gwas_annotated, RSID_dbsnp, A1, A2, P, BETA, Neff)
+colnames(gwas_annotated) <- c("SNP", "A1", "A2","P","BETA","Neff")
+dim(gwas_annotated) #  5347927
+write.table(gwas_annotated, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_ldsc_only.txt.gz"), sep=" ", quote=F, row.names=F, col.names=T)
+
+
+
+
+
+######################################
+# UKBB study
+######################################
+# R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_samplesize_meta.txt.gz", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+
+# add rs ids from database
+dbsnp <- fread("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz", stringsAsFactors=F, h=T)
+gwas_annotated <- merge(gwas, dbsnp, by.x="CHR_BP", by.y="CHRBP_hg19")
+dim(gwas)           # 7042631     
+dim(gwas_annotated) # 6231370
+
+gwas_annotated$allele_match <- ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp & gwas_annotated$A2==gwas_annotated$A2_dbsnp), "match",   	
+									ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp & gwas_annotated$A2==gwas_annotated$A1_dbsnp), "match",   	
+										ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A2_dbsnp_rc), "match", 
+											ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A1_dbsnp_rc), "match","err")
+											)) )					
+table(gwas_annotated$allele_match) # 43 mismatches
+gwas_annotated <- gwas_annotated[!gwas_annotated$allele_match=="err",]
+dim(gwas_annotated) # 6231327 
+
+# Now, we wanna follow through with the rsids... make sure there are no dups. Not necessary since the database already contained non-dup rs ids and chr_bp coordinates.
+gwas_annotated <- gwas_annotated[!(duplicated(gwas_annotated$RSID_dbsnp) | duplicated(gwas_annotated$RSID_dbsnp, fromLast=TRUE) ) ,]
+
+gwas_annotated <- dplyr::select(gwas_annotated, RSID_dbsnp, A1, A2, P,  BETA, Neff)
+colnames(gwas_annotated) <- c("SNP", "A1", "A2","P","BETA", "Neff")
+dim(gwas_annotated) # 6231327
+write.table(gwas_annotated, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_ldsc_only.txt.gz"), sep=" ", quote=F, row.names=F, col.names=T)
+
+
+
+
+
+######################################
+# Finngen study
+######################################
+# R>
+library(data.table)
+library(dplyr)
+setDTthreads(threads=16)
+gwas_0 <- fread("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_samplesize_meta.txt.gz", h=T, stringsAsFactors=F)
+gwas <- gwas_0
+
+# add rs ids from database
+dbsnp <- fread("~/commonmind/Rodrigo/snp151_common/snp151Common_processed.txt.gz", stringsAsFactors=F, h=T)
+gwas_annotated <- merge(gwas, dbsnp, by.x="CHR_BP", by.y="CHRBP_hg19")
+dim(gwas)           # 6860279 
+dim(gwas_annotated) # 5821394
+
+gwas_annotated$allele_match <- ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp & gwas_annotated$A2==gwas_annotated$A2_dbsnp), "match",   	
+									ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp & gwas_annotated$A2==gwas_annotated$A1_dbsnp), "match",   	
+										ifelse((gwas_annotated$A1==gwas_annotated$A1_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A2_dbsnp_rc), "match", 
+											ifelse((gwas_annotated$A1==gwas_annotated$A2_dbsnp_rc & gwas_annotated$A2==gwas_annotated$A1_dbsnp_rc), "match","err")
+											)) )					
+table(gwas_annotated$allele_match) # 201 mismatches
+gwas_annotated <- gwas_annotated[!gwas_annotated$allele_match=="err",]
+dim(gwas_annotated) # 5821193
+
+# Now, we wanna follow through with the rsids... make sure there are no dups. Not necessary since the database already contained non-dup rs ids and chr_bp coordinates.
+gwas_annotated <- gwas_annotated[!(duplicated(gwas_annotated$RSID_dbsnp) | duplicated(gwas_annotated$RSID_dbsnp, fromLast=TRUE) ) ,]
+
+gwas_annotated <- dplyr::select(gwas_annotated, RSID_dbsnp, A1, A2, P, BETA, Neff)
+colnames(gwas_annotated) <- c("SNP", "A1", "A2","P","BETA", "Neff")
+dim(gwas_annotated) #  5821193
+write.table(gwas_annotated, gzfile("/users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_ldsc_only.txt.gz"), sep=" ", quote=F, row.names=F, col.names=T)
+
+
+
+######################
+# Run munge_sumstats.py per GWAS
+######################
+cd /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs
+
+# run munge sumstats per GWAS
+munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_ldsc_only.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/Johnson_4_for_ldsc_only_2 --snp SNP --a1 A1 --a2 A2 --p P --N-col Neff --merge-alleles /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/w_hm3.snplist --chunksize 500000
+
+munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_ldsc_only.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/mclaren_4_for_ldsc_only_2 --snp SNP --a1 A1 --a2 A2 --p P --N-col Neff --merge-alleles /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/w_hm3.snplist --chunksize 500000
+
+munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_ldsc_only.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/ukbb_4_for_ldsc_only_2 --snp SNP --a1 A1 --a2 A2 --p P --N-col Neff --merge-alleles /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/w_hm3.snplist --chunksize 500000
+
+munge_sumstats.py --sumstats /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_ldsc_only.txt.gz --out /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/finngen_4_for_ldsc_only_2 --snp SNP --a1 A1 --a2 A2 --p P --N-col Neff --merge-alleles /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/w_hm3.snplist --chunksize 500000
+
+
+######################
+# Calculate heritability per GWAS
+######################
+ldsc.py --h2 Johnson_4_for_ldsc_only_2.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out Johnson_4_for_ldsc_only_2.sumstats.heritab
+# Total Observed scale h2: -0.0171 (0.4682)
+# Lambda GC: 1.0105
+# Mean Chi^2: 1.0053
+# Intercept: 1.0056 (0.0064)
+# Ratio: 1.0608 (1.2136)
+
+ldsc.py --h2 mclaren_4_for_ldsc_only_2.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out mclaren_4_for_ldsc_only_2.sumstats.heritab
+# Total Observed scale h2: 0.2773 (0.0466)
+# Lambda GC: 1.1491
+# Mean Chi^2: 1.1592
+# Intercept: 1.0833 (0.0076)  #### <------- Inflated intercept
+# Ratio: 0.5234 (0.048)
+
+ldsc.py --h2 ukbb_4_for_ldsc_only_2.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out ukbb_4_for_ldsc_only_2.sumstats.heritab
+# Total Observed scale h2: 0.8099 (0.3768)
+# Lambda GC: 1.0046
+# Mean Chi^2: 1.0097
+# Intercept: 0.991 (0.0063)
+# Ratio < 0 (usually indicates GC correction).
+
+ldsc.py --h2 finngen_4_for_ldsc_only_2.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out finngen_4_for_ldsc_only_2.sumstats.heritab
+# Total Observed scale h2: 0.3982 (0.3349)
+# Lambda GC: 1.0075
+# Mean Chi^2: 1.0084
+# Intercept: 0.9972 (0.0068)
+# Ratio < 0 (usually indicates GC correction).
+
+######################
+# Calculate genomic correlations per GWAS
+######################
+# # Now run genomic correlations.
+# 1 and 2 - Johnson and mclaren
+# 1 and 3 - Johnson and ukbb
+# 1 and 4 - Johnson and finngen
+
+ldsc.py --rg Johnson_4_for_ldsc_only_2.sumstats.gz,mclaren_4_for_ldsc_only_2.sumstats.gz,ukbb_4_for_ldsc_only_2.sumstats.gz,finngen_4_for_ldsc_only_2.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out HIV_GWASs_1
+
+# 2 and 3 - mclaren and ukbb
+# 2 and 4 - mclaren and finngen
+
+ldsc.py --rg mclaren_4_for_ldsc_only_2.sumstats.gz,ukbb_4_for_ldsc_only_2.sumstats.gz,finngen_4_for_ldsc_only_2.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out HIV_GWASs_2
+
+# 3 and 4 - ukbb and finngen
+
+ldsc.py --rg ukbb_4_for_ldsc_only_2.sumstats.gz,finngen_4_for_ldsc_only_2.sumstats.gz --ref-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --w-ld-chr /users/k1642468/commonmind/Rodrigo/hiv_meta_final/GWASs/eur_w_ld_chr/ --out HIV_GWASs_3
+
+
+####################
+# Results
+####################
+p1         p2         rg      se  		 z     p  		h2_obs  h2_obs_se  h2_int  h2_int_se  gcov_int  gcov_int_se
+Johnson_4  mclaren_4  NA      NA  		NA     NA  		0.2750     0.0454  1.0841     0.0078    0.0103       0.0047
+Johnson_4     ukbb_4  NA      NA  		NA     NA   	0.8198     0.3929  0.9908     0.0067    0.0009       0.0048
+Johnson_4  finngen_4  NA      NA  		NA     NA  		0.4371     0.3430  0.9958     0.0069   -0.0002       0.0042
+mclaren_4     ukbb_4  0.1324  0.2096  0.6316   0.5277   0.8980     0.3936  0.9886     0.0071    0.0001       0.0054
+mclaren_4  finngen_4  0.4624  0.2687  1.7207   0.0853 	0.5519     0.3426  0.9926     0.0072   -0.0022       0.0047
+ukbb_4     finngen_4 -0.2024  0.4416 -0.4584   0.6466   0.387      0.3437  0.9972     0.0067    0.0072       0.0043
+
+
+
+# gcov_int ~ 0 for all pairwise comparisons

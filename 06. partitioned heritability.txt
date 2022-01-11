@@ -1,0 +1,62 @@
+mkdir ~/commonmind/Rodrigo/hiv_meta_final/partitioned_heritability
+cd ~/commonmind/Rodrigo/hiv_meta_final/partitioned_heritability
+
+# download  baseline model LD scores
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/1000G_Phase3_baselineLD_v2.2_ldscores.tgz
+
+# download regression weights 
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/1000G_Phase3_weights_hm3_no_MHC.tgz
+
+# download allele frequencies
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/1000G_Phase3_frq.tgz
+
+tar -zxvf 1000G_Phase3_frq.tgz
+tar -zxvf 1000G_Phase3_weights_hm3_no_MHC.tgz
+tar -zxvf 1000G_Phase3_baselineLD_v2.2_ldscores.tgz
+
+# sumstats already munged: /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged.hapmap3.txt.gz.sumstats.gz 
+
+DIR=/users/k1642468/commonmind/Rodrigo/hiv_meta_final/partitioned_heritability
+cd ${DIR}
+mkdir results
+
+# Doing partitioned heritability with v2.2 baseline scores. 
+conda activate ldsc_R
+ldsc.py --h2 /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged.hapmap3.txt.gz.sumstats.gz --ref-ld-chr ${DIR}/baselineLD. --w-ld-chr ${DIR}/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC. --overlap-annot --frqfile-chr ${DIR}/1000G_Phase3_frq/1000G.EUR.QC. --out ${DIR}/results/hiv_acq_meta
+
+# Cell-type specific regressions
+cts_name=("Multi_tissue_gene_expr" "ImmGen")
+for i in "${cts_name[@]}"; do
+wget https://storage.googleapis.com/broad-alkesgroup-public/LDSCORE/LDSC_SEG_ldscores/${cts_name}_1000Gv3_ldscores.tgz
+tar -xvzf ${cts_name}_1000Gv3_ldscores.tgz
+done
+
+
+
+############# /users/k1642468/commonmind/Rodrigo/hiv_meta_final/ldsc_cell_specific_final.sh
+#!/bin/bash -l
+#SBATCH -o /users/k1642468/logs/%x-%A-%a.out
+#SBATCH -p shared,brc
+#SBATCH --time=0-48:00:00 # takes a day for each dataset
+#SBATCH --mem-per-cpu=60000
+#SBATCH --ntasks=1
+    #   SBATCH --array=1-22
+
+trap 'echo "# $(date) (time) $BASH_COMMAND"' DEBUG
+
+DIR=/users/k1642468/commonmind/Rodrigo/hiv_meta_final/partitioned_heritability
+conda activate ldsc_R
+
+echo "Analyzing ${CTS_NAME_JOB}"
+
+ldsc.py --h2-cts /users/k1642468/commonmind/Rodrigo/hiv_meta_final/meta_by_samplesize/HIV_acquisition_meta_ldsc.munged.hapmap3.txt.gz.sumstats.gz --ref-ld-chr ${DIR}/baselineLD. --out ${DIR}/results/hiv_acq_meta_${CTS_NAME_JOB} --ref-ld-chr-cts ${DIR}/${CTS_NAME_JOB}.ldcts --w-ld-chr ${DIR}/1000G_Phase3_weights_hm3_no_MHC/weights.hm3_noMHC.
+# N.B. this is also using the baseline weights from 2.2 annotation.
+
+
+###########################################
+
+cts_name=("Multi_tissue_gene_expr" "ImmGen")
+for tissue in "${cts_name[@]}"; do
+sbatch --export=CTS_NAME_JOB=${tissue} /users/k1642468/commonmind/Rodrigo/hiv_meta_final/ldsc_cell_specific_final.sh
+sleep 1
+done
